@@ -1,16 +1,18 @@
-# app/utils/security.py (atualizado)
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from jose import JWTError, jwt
 from datetime import datetime, timedelta, timezone
+from typing import Optional, List
 import secrets
+import bcrypt
 
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
 from app.models.session import Session
+from app.models.role import Role
 
 # Basic Auth for Bot
 basic_security = HTTPBasic()
@@ -37,8 +39,21 @@ async def verify_bot_auth(credentials: HTTPBasicCredentials = Depends(basic_secu
 # JWT Bearer for Dashboard
 jwt_bearer = HTTPBearer(auto_error=False)
 
+# ============ BCRYPT HELPERS ============
+
+def hash_password(password: str) -> str:
+    """Hash senha com bcrypt"""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verifica senha contra hash"""
+    return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+
+# ============ JWT HELPERS ============
+
 def create_access_token(data: dict) -> str:
-    """Cria um token JWT de acesso com 30 dias de duração"""
+    """Cria um token JWT de acesso"""
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(days=settings.ACCESS_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire, "type": "access"})
@@ -50,7 +65,7 @@ def create_access_token(data: dict) -> str:
     return encoded_jwt
 
 def create_refresh_token(data: dict) -> str:
-    """Cria um token JWT de refresh com 30 dias de duração"""
+    """Cria um token JWT de refresh"""
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire, "type": "refresh"})
@@ -115,24 +130,49 @@ async def get_current_user(
         )
     
     result = await db.execute(
-        select(User).where(User.id == int(user_id))
+        select(User).where(User.id == user_id)
     )
     user = result.scalar_one_or_none()
     
-    if user is None:
+    if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuário não encontrado"
+            detail="Usuário não encontrado ou inativo"
         )
     
     return user
 
-async def get_current_user_optional(
-    request: Request,
-    db: AsyncSession = Depends(get_db)
-) -> User | None:
-    """Obtém o usuário atual de forma opcional (sem lançar erro)"""
-    try:
-        return await get_current_user(request, db)
-    except HTTPException:
-        return None
+# ============ ROLE CHECKERS ============
+
+async def get_user_roles(user: User, db: AsyncSession) -> List[str]:
+    """Retorna lista de nomes de roles do usuário"""
+    return [role.name for role in user.roles]
+
+async def require_role(role_name: str):
+    """Factory para criar dependency de role específica"""
+    async def role_checker(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db)
+    ) -> User:
+        # Recarregar user com roles
+        result = await db.execute(
+            select(User).where(User.id == current_user.id)
+        )
+        user = result.scalar_one()
+        
+        user_role_names = [role.name.lower() for role in user.roles]
+        
+        if role_name.lower() not in user_role_names:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Role '{role_name}' necessária"
+            )
+        
+        return user
+    
+    return role_checker
+
+# Dependencies pré-configuradas
+require_admin = require_role("admin")
+require_mod = require_role("mod")
+require_owner = require_role("owner")

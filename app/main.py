@@ -6,14 +6,14 @@ from fastapi.responses import JSONResponse
 import time
 
 from app.config import settings
-from app.database import create_tables, engine
+from app.database import create_tables, create_default_roles, engine
 from app.routes import guilds, auth, dashboard
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan para criar tabelas automaticamente"""
     print("🚀 Iniciando API...")
     await create_tables()
+    await create_default_roles()  # ← Adicionar isso
     print("✅ Banco de dados inicializado")
     yield
     print("🛑 Finalizando API...")
