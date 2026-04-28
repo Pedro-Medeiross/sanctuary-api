@@ -1,4 +1,4 @@
-# app/routes/guilds.py (atualizado com aiohttp)
+# app/routes/guilds.py (COMPLETO E CORRIGIDO)
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -230,10 +230,26 @@ async def update_log_channels_dashboard(
 @router.get("/{guild_id}/config", response_model=Dict)
 async def get_guild_full_config(
     guild_id: int,
+    request: Request,  # ← ADICIONADO
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """[Dashboard] Retorna configuração completa da guild para o dashboard"""
+    # ← ADICIONADO - Verificar permissão no Discord
+    discord_token = request.headers.get("X-Discord-Token")
+    if not discord_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token do Discord não fornecido"
+        )
+    
+    has_permission = await verify_guild_permission(guild_id, discord_token)
+    if not has_permission:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Você não tem permissão para acessar esta guild"
+        )
+    
     guild = await get_or_create_guild(guild_id, db)
     
     result = await db.execute(

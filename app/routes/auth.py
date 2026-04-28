@@ -1,3 +1,4 @@
+# app/routes/auth.py
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -22,7 +23,8 @@ from app.utils.security import (
     create_access_token, 
     create_refresh_token,
     hash_password,
-    verify_password
+    verify_password,
+    verify_bot_auth
 )
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
@@ -36,7 +38,8 @@ GOOGLE_API_URL = "https://www.googleapis.com"
 async def register(
     user_data: UserRegisterRequest,
     response: Response,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    bot_user: str = Depends(verify_bot_auth)
 ):
     """Registro com email/senha"""
     
@@ -118,7 +121,8 @@ async def register(
 async def login(
     login_data: UserLoginRequest,
     response: Response,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    bot_user: str = Depends(verify_bot_auth)
 ):
     """Login com email/senha"""
     
@@ -179,7 +183,9 @@ async def login(
 # ============ OAUTH DISCORD ============
 
 @router.get("/discord/login-url")
-async def get_discord_login_url():
+async def get_discord_login_url(
+    bot_user: str = Depends(verify_bot_auth)
+):
     """URL de login com Discord"""
     url = (
         f"https://discord.com/api/oauth2/authorize"
@@ -194,7 +200,8 @@ async def get_discord_login_url():
 async def discord_auth(
     auth_data: DiscordAuthRequest,
     response: Response,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    bot_user: str = Depends(verify_bot_auth)
 ):
     """Login/Criar conta com Discord"""
     
@@ -324,6 +331,7 @@ async def discord_auth(
 @router.post("/link-discord")
 async def link_discord(
     link_data: LinkDiscordRequest,
+    response: Response,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -411,8 +419,80 @@ async def refresh_token(
     response: Response,
     db: AsyncSession = Depends(get_db)
 ):
-    """Renova tokens"""
-    # ... (manter implementação anterior)
+    """Renova o access token usando refresh token (do cookie)"""
+    refresh_token_value = request.cookies.get("refresh_token")
+    
+    if not refresh_token_value:
+        raise HTTPException(401, "Refresh token não encontrado")
+    
+    from app.utils.security import verify_token
+    
+    payload = verify_token(refresh_token_value, "refresh")
+    user_id = payload.get("sub")
+    
+    # Verificar se sessão existe e está ativa
+    result = await db.execute(
+        select(Session).where(
+            Session.user_id == user_id,
+            Session.refresh_token == refresh_token_value,
+            Session.is_active == True
+        )
+    )
+    session = result.scalar_one_or_none()
+    
+    if not session:
+        raise HTTPException(401, "Refresh token inválido ou revogado")
+    
+    # Desativar sessão antiga
+    session.is_active = False
+    
+    # Obter usuário
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(401, "Usuário não encontrado")
+    
+    # Criar novos tokens
+    new_access_token = create_access_token({"sub": str(user.id)})
+    new_refresh_token = create_refresh_token({"sub": str(user.id)})
+    
+    # Criar nova sessão
+    new_session = Session(
+        user_id=user.id,
+        access_token=new_access_token,
+        refresh_token=new_refresh_token,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=settings.ACCESS_TOKEN_EXPIRE_DAYS)
+    )
+    db.add(new_session)
+    
+    # Atualizar cookies
+    response.set_cookie("access_token", new_access_token,
+                       max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
+                       httponly=True, secure=False, samesite="lax", path="/")
+    response.set_cookie("refresh_token", new_refresh_token,
+                       max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+                       httponly=True, secure=False, samesite="lax", path="/")
+    
+    print(f"🔄 Token renovado para: {user.username}")
+    
+    return TokenResponse(
+        access_token=new_access_token,
+        refresh_token=new_refresh_token,
+        user=UserResponse(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            avatar_url=user.avatar_url,
+            roles=[role.name for role in user.roles],
+            discord_id=user.discord_id,
+            google_id=user.google_id,
+            is_active=user.is_active,
+            is_verified=user.is_verified,
+            created_at=user.created_at,
+            updated_at=user.updated_at
+        )
+    )
 
 # ============ LOGOUT ============
 
@@ -422,5 +502,25 @@ async def logout(
     response: Response,
     db: AsyncSession = Depends(get_db)
 ):
-    """Logout"""
-    # ... (manter implementação anterior)
+    """Logout - invalida a sessão atual"""
+    access_token = request.cookies.get("access_token")
+    
+    if access_token:
+        # Buscar e desativar sessão
+        result = await db.execute(
+            select(Session).where(
+                Session.access_token == access_token,
+                Session.is_active == True
+            )
+        )
+        session = result.scalar_one_or_none()
+        
+        if session:
+            session.is_active = False
+            print(f"👋 Logout: usuário {session.user_id}")
+    
+    # Limpar cookies
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("refresh_token", path="/")
+    
+    return {"message": "Logout realizado com sucesso"}
