@@ -279,7 +279,7 @@ async def logout(
     return {"message": "Logout realizado com sucesso"}
 
 @router.get("/login-url")
-async def get_discord_login_url():
+async def get_discord_login_url(prompt: str = "none"):  # 👈 Adiciona parâmetro opcional
     """Retorna a URL de login do Discord para o frontend"""
     discord_url = (
         f"https://discord.com/api/oauth2/authorize"
@@ -287,6 +287,7 @@ async def get_discord_login_url():
         f"&redirect_uri={settings.DISCORD_REDIRECT_URI}"
         f"&response_type=code"
         f"&scope={DISCORD_OAUTH_SCOPES.replace(' ', '%20')}"
+        f"&prompt={prompt}"  # 👈 Usa o parâmetro
     )
     
     return {
