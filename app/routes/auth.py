@@ -24,7 +24,8 @@ from app.utils.security import (
     create_refresh_token,
     hash_password,
     verify_password,
-    verify_bot_auth
+    verify_bot_auth,
+    verify_app_auth
 )
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
@@ -39,7 +40,7 @@ async def register(
     user_data: UserRegisterRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    bot_user: str = Depends(verify_bot_auth)
+    bot_user: str = Depends(verify_app_auth)
 ):
     """Registro com email/senha"""
     
@@ -122,7 +123,7 @@ async def login(
     login_data: UserLoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    bot_user: str = Depends(verify_bot_auth)
+    bot_user: str = Depends(verify_app_auth)
 ):
     """Login com email/senha"""
     
@@ -184,7 +185,7 @@ async def login(
 
 @router.get("/discord/login-url")
 async def get_discord_login_url(
-    bot_user: str = Depends(verify_bot_auth)
+    bot_user: str = Depends(verify_app_auth)
 ):
     """URL de login com Discord"""
     url = (
@@ -201,7 +202,7 @@ async def discord_auth(
     auth_data: DiscordAuthRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    bot_user: str = Depends(verify_bot_auth)
+    bot_user: str = Depends(verify_app_auth)
 ):
     """Login/Criar conta com Discord"""
     

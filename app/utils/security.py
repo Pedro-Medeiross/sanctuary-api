@@ -36,6 +36,28 @@ async def verify_bot_auth(credentials: HTTPBasicCredentials = Depends(basic_secu
         )
     return credentials.username
 
+# Basic Auth for App/Frontend (NOVA)
+app_security = HTTPBasic()
+
+async def verify_app_auth(credentials: HTTPBasicCredentials = Depends(app_security)):
+    """Verifica Basic Auth para o frontend/app"""
+    is_correct_username = secrets.compare_digest(
+        credentials.username.encode("utf-8"),
+        settings.API_USER.encode("utf-8")
+    )
+    is_correct_password = secrets.compare_digest(
+        credentials.password.encode("utf-8"),
+        settings.API_PASS.encode("utf-8")
+    )
+    
+    if not (is_correct_username and is_correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso não autorizado",
+            # Sem WWW-Authenticate header para evitar popup do navegador
+        )
+    return credentials.username
+
 # JWT Bearer for Dashboard
 jwt_bearer = HTTPBearer(auto_error=False)
 
