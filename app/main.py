@@ -9,7 +9,7 @@ from app.config import settings
 from app.database import create_tables, create_default_roles, engine
 from app.routes import guilds, auth, dashboard
 from app.utils.security import verify_app_auth
-from app.routes import guilds, auth, dashboard, uploads
+from app.routes import guilds, auth, dashboard, profile, uploads
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -62,6 +62,7 @@ async def health_check(
     }
 
 app.include_router(auth.router)
+app.include_router(profile.router)
 app.include_router(guilds.router)
 app.include_router(dashboard.router)
 app.include_router(uploads.router)
