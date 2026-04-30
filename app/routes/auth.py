@@ -34,6 +34,7 @@ DISCORD_API_URL = "https://discord.com/api/v10"
 
 # ============ REGISTRO LOCAL ============
 
+# app/routes/auth.py - REGISTER CORRIGIDO
 @router.post("/register", response_model=TokenResponse)
 async def register(
     user_data: UserRegisterRequest,
@@ -42,6 +43,7 @@ async def register(
     app_user: str = Depends(verify_app_auth)
 ):
     """Registro com email/senha"""
+    from app.models.role import user_roles  # ← IMPORTAR TABELA DE ASSOCIAÇÃO
     
     # Verificar se email já existe
     result = await db.execute(
@@ -68,17 +70,21 @@ async def register(
     db.add(user)
     await db.flush()
     
-    # Atribuir role padrão "Player" e salvar o nome da role
-    role_names = []
+    # Atribuir role padrão "Player"
     result = await db.execute(
         select(Role).where(Role.name == "Player", Role.is_default == True)
     )
     default_role = result.scalar_one_or_none()
-    if default_role:
-        user.roles.append(default_role)
-        role_names.append(default_role.name)
     
-    await db.flush()
+    if default_role:
+        # Inserir diretamente na tabela de associação (sem disparar lazy load)
+        from sqlalchemy import insert
+        await db.execute(
+            insert(user_roles).values(
+                user_id=user.id,
+                role_id=default_role.id
+            )
+        )
     
     # Criar tokens JWT
     access_token = create_access_token({"sub": str(user.id)})
@@ -95,7 +101,7 @@ async def register(
     await db.flush()
     await db.commit()
     
-    # Cookies (depois do commit)
+    # Cookies
     response.set_cookie(
         "access_token", access_token, 
         max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
@@ -116,7 +122,7 @@ async def register(
             id=user.id,
             username=user.username,
             email=user.email,
-            roles=role_names,
+            roles=["Player"] if default_role else [],
             is_active=user.is_active,
             is_verified=user.is_verified,
             created_at=user.created_at,
@@ -281,8 +287,13 @@ async def discord_auth(
             )
             default_role = result.scalar_one_or_none()
             if default_role:
-                user.roles.append(default_role)
-                role_names.append(default_role.name)
+                from sqlalchemy import insert
+                await db.execute(
+                    insert(user_roles).values(
+                        user_id=user.id,
+                        role_id=default_role.id
+                    )
+                )
     
     # Se usuário já existia, carregar roles
     if not role_names and user:
