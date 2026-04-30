@@ -1,6 +1,6 @@
 # app/main.py
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import time
@@ -8,12 +8,13 @@ import time
 from app.config import settings
 from app.database import create_tables, create_default_roles, engine
 from app.routes import guilds, auth, dashboard
+from app.utils.security import verify_app_auth  # ← ADICIONAR
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🚀 Iniciando API...")
     await create_tables()
-    await create_default_roles()  # ← Adicionar isso
+    await create_default_roles()
     print("✅ Banco de dados inicializado")
     yield
     print("🛑 Finalizando API...")
@@ -25,10 +26,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS
+# CORS - Restringir em produção
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Em produção, especificar origens
+    allow_origins=[
+        "http://localhost:3001",
+        "http://192.168.101.17:3001",
+        "http://127.0.0.1:3001",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,14 +45,14 @@ async def log_requests(request: Request, call_next):
     start_time = time.time()
     response = await call_next(request)
     duration = time.time() - start_time
-    
     print(f"📝 {request.method} {request.url.path} - {response.status_code} - {duration:.2f}s")
-    
     return response
 
 # Rotas
 @app.get("/health")
-async def health_check():
+async def health_check(
+    app_user: str = Depends(verify_app_auth)  # ← ADICIONAR BASIC AUTH
+):
     """Health check"""
     return {
         "status": "ok",
@@ -76,6 +81,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=8001,
+        port=8000,  # ← 8000 (sua porta original)
         reload=True
     )
