@@ -1,14 +1,15 @@
-# app/routes/auth.py
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+# app/routes/auth.py - ADICIONAR NO TOPO
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, UploadFile  # ← ADICIONAR UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload  # ← MOVER PARA O TOPO
+from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 import aiohttp
 import uuid
 import os
 from pathlib import Path
+
 from app.utils.uploads import (
     ensure_directories, validate_image, delete_old_file, 
     save_image, get_file_path, AVATARS_DIR, BANNERS_DIR
@@ -21,9 +22,16 @@ from app.models.session import Session
 from app.models.user_connection import UserConnection, ConnectionProvider
 from app.models.role import Role
 from app.schemas.user import (
-    UserRegisterRequest, UserLoginRequest, UserResponse, 
-    TokenResponse, DiscordAuthRequest, GoogleAuthRequest,
-    LinkDiscordRequest, LinkGoogleRequest
+    UserRegisterRequest, 
+    UserLoginRequest, 
+    UserResponse, 
+    TokenResponse, 
+    DiscordAuthRequest, 
+    GoogleAuthRequest,
+    LinkDiscordRequest, 
+    LinkGoogleRequest,
+    UserProfileUpdate,
+    UserPasswordUpdate,
 )
 from app.utils.security import (
     get_current_user, 

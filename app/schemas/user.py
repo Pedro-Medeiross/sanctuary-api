@@ -1,3 +1,4 @@
+from __future__ import annotations
 from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List
 from datetime import datetime
@@ -97,3 +98,10 @@ class LinkDiscordRequest(BaseModel):
 class LinkGoogleRequest(BaseModel):
     code: str
     redirect_uri: str
+
+
+# Rebuild para resolver forward references
+UserResponse.model_rebuild()
+TokenResponse.model_rebuild()
+UserProfileUpdate.model_rebuild()
+UserPasswordUpdate.model_rebuild()
