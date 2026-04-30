@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload  # ← MOVER PARA O TOPO
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 import aiohttp
@@ -24,14 +25,12 @@ from app.utils.security import (
     create_refresh_token,
     hash_password,
     verify_password,
-    verify_bot_auth,
     verify_app_auth
 )
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
 
 DISCORD_API_URL = "https://discord.com/api/v10"
-GOOGLE_API_URL = "https://www.googleapis.com"
 
 # ============ REGISTRO LOCAL ============
 
@@ -40,7 +39,7 @@ async def register(
     user_data: UserRegisterRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    bot_user: str = Depends(verify_app_auth)
+    app_user: str = Depends(verify_app_auth)
 ):
     """Registro com email/senha"""
     
@@ -69,13 +68,17 @@ async def register(
     db.add(user)
     await db.flush()
     
-    # Atribuir role padrão "Player" (se existir)
+    # Atribuir role padrão "Player" e salvar o nome da role
+    role_names = []
     result = await db.execute(
         select(Role).where(Role.name == "Player", Role.is_default == True)
     )
     default_role = result.scalar_one_or_none()
     if default_role:
         user.roles.append(default_role)
+        role_names.append(default_role.name)
+    
+    await db.flush()
     
     # Criar tokens JWT
     access_token = create_access_token({"sub": str(user.id)})
@@ -90,14 +93,19 @@ async def register(
     )
     db.add(session)
     await db.flush()
+    await db.commit()
     
-    # Cookies
-    response.set_cookie("access_token", access_token, 
-                       max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
-                       httponly=True, secure=False, samesite="lax", path="/")
-    response.set_cookie("refresh_token", refresh_token, 
-                       max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-                       httponly=True, secure=False, samesite="lax", path="/")
+    # Cookies (depois do commit)
+    response.set_cookie(
+        "access_token", access_token, 
+        max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
+        httponly=True, secure=False, samesite="lax", path="/"
+    )
+    response.set_cookie(
+        "refresh_token", refresh_token, 
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+        httponly=True, secure=False, samesite="lax", path="/"
+    )
     
     print(f"✅ Novo registro: {user.username} ({user.email})")
     
@@ -108,7 +116,7 @@ async def register(
             id=user.id,
             username=user.username,
             email=user.email,
-            roles=[role.name for role in user.roles],
+            roles=role_names,
             is_active=user.is_active,
             is_verified=user.is_verified,
             created_at=user.created_at,
@@ -123,13 +131,15 @@ async def login(
     login_data: UserLoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    bot_user: str = Depends(verify_app_auth)
+    app_user: str = Depends(verify_app_auth)
 ):
     """Login com email/senha"""
     
-    # Buscar usuário
+    # Buscar usuário COM ROLES (eager load)
     result = await db.execute(
-        select(User).where(User.email == login_data.email)
+        select(User)
+        .options(selectinload(User.roles))
+        .where(User.email == login_data.email)
     )
     user = result.scalar_one_or_none()
     
@@ -152,14 +162,19 @@ async def login(
     )
     db.add(session)
     await db.flush()
+    await db.commit()
     
     # Cookies
-    response.set_cookie("access_token", access_token,
-                       max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
-                       httponly=True, secure=False, samesite="lax", path="/")
-    response.set_cookie("refresh_token", refresh_token,
-                       max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-                       httponly=True, secure=False, samesite="lax", path="/")
+    response.set_cookie(
+        "access_token", access_token,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
+        httponly=True, secure=False, samesite="lax", path="/"
+    )
+    response.set_cookie(
+        "refresh_token", refresh_token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+        httponly=True, secure=False, samesite="lax", path="/"
+    )
     
     print(f"🔑 Login: {user.username}")
     
@@ -185,7 +200,7 @@ async def login(
 
 @router.get("/discord/login-url")
 async def get_discord_login_url(
-    bot_user: str = Depends(verify_app_auth)
+    app_user: str = Depends(verify_app_auth)
 ):
     """URL de login com Discord"""
     url = (
@@ -202,12 +217,11 @@ async def discord_auth(
     auth_data: DiscordAuthRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    bot_user: str = Depends(verify_app_auth)
+    app_user: str = Depends(verify_app_auth)
 ):
     """Login/Criar conta com Discord"""
     
     async with aiohttp.ClientSession() as session:
-        # Trocar code por token
         async with session.post(
             f"{DISCORD_API_URL}/oauth2/token",
             data={
@@ -222,7 +236,6 @@ async def discord_auth(
                 raise HTTPException(400, "Falha na autenticação Discord")
             token_data = await token_resp.json()
         
-        # Buscar dados do usuário
         async with session.get(
             f"{DISCORD_API_URL}/users/@me",
             headers={"Authorization": f"Bearer {token_data['access_token']}"}
@@ -230,6 +243,7 @@ async def discord_auth(
             discord_user = await user_resp.json()
     
     discord_id = int(discord_user["id"])
+    role_names = []
     
     # Verificar se já existe usuário com esse Discord
     result = await db.execute(
@@ -238,7 +252,6 @@ async def discord_auth(
     user = result.scalar_one_or_none()
     
     if not user:
-        # Verificar se email do Discord já existe
         discord_email = discord_user.get("email")
         if discord_email:
             result = await db.execute(
@@ -246,17 +259,15 @@ async def discord_auth(
             )
             user = result.scalar_one_or_none()
             if user:
-                # Vincular Discord ao user existente
                 user.discord_id = discord_id
                 user.avatar_url = user.avatar_url or f"https://cdn.discordapp.com/avatars/{discord_id}/{discord_user['avatar']}.png"
         
         if not user:
-            # Criar novo usuário
             user = User(
                 id=uuid.uuid4(),
                 username=discord_user["username"],
                 email=discord_email or f"{discord_id}@discord.user",
-                password_hash=hash_password(str(uuid.uuid4())),  # Senha aleatória
+                password_hash=hash_password(str(uuid.uuid4())),
                 avatar_url=f"https://cdn.discordapp.com/avatars/{discord_id}/{discord_user['avatar']}.png" if discord_user.get("avatar") else None,
                 discord_id=discord_id,
                 is_verified=True
@@ -271,6 +282,17 @@ async def discord_auth(
             default_role = result.scalar_one_or_none()
             if default_role:
                 user.roles.append(default_role)
+                role_names.append(default_role.name)
+    
+    # Se usuário já existia, carregar roles
+    if not role_names and user:
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.roles))
+            .where(User.id == user.id)
+        )
+        user = result.scalar_one()
+        role_names = [role.name for role in user.roles]
     
     # Criar conexão
     connection = UserConnection(
@@ -298,14 +320,19 @@ async def discord_auth(
     )
     db.add(db_session)
     await db.flush()
+    await db.commit()
     
     # Cookies
-    response.set_cookie("access_token", access_token,
-                       max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
-                       httponly=True, secure=False, samesite="lax", path="/")
-    response.set_cookie("refresh_token", refresh_token,
-                       max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-                       httponly=True, secure=False, samesite="lax", path="/")
+    response.set_cookie(
+        "access_token", access_token,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
+        httponly=True, secure=False, samesite="lax", path="/"
+    )
+    response.set_cookie(
+        "refresh_token", refresh_token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+        httponly=True, secure=False, samesite="lax", path="/"
+    )
     
     print(f"✅ Login Discord: {user.username}")
     
@@ -317,7 +344,7 @@ async def discord_auth(
             username=user.username,
             email=user.email,
             avatar_url=user.avatar_url,
-            roles=[role.name for role in user.roles],
+            roles=role_names,
             discord_id=user.discord_id,
             google_id=user.google_id,
             is_active=user.is_active,
@@ -327,12 +354,11 @@ async def discord_auth(
         )
     )
 
-# ============ VINCULAR DISCORD (usuário logado) ============
+# ============ VINCULAR DISCORD ============
 
 @router.post("/link-discord")
 async def link_discord(
     link_data: LinkDiscordRequest,
-    response: Response,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -364,18 +390,15 @@ async def link_discord(
     
     discord_id = int(discord_user["id"])
     
-    # Verificar se Discord já está vinculado a outro usuário
     result = await db.execute(
         select(User).where(User.discord_id == discord_id)
     )
     if result.scalar_one_or_none():
         raise HTTPException(400, "Este Discord já está vinculado a outra conta")
     
-    # Vincular
     current_user.discord_id = discord_id
     current_user.avatar_url = current_user.avatar_url or f"https://cdn.discordapp.com/avatars/{discord_id}/{discord_user['avatar']}.png"
     
-    # Criar conexão
     connection = UserConnection(
         user_id=current_user.id,
         provider=ConnectionProvider.DISCORD,
@@ -388,6 +411,7 @@ async def link_discord(
     )
     db.add(connection)
     await db.flush()
+    await db.commit()
     
     print(f"🔗 Discord vinculado: {current_user.username} -> {discord_user['username']}")
     
@@ -396,20 +420,31 @@ async def link_discord(
 # ============ ME ============
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
+async def get_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
     """Retorna dados do usuário logado"""
+    
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.roles))
+        .where(User.id == current_user.id)
+    )
+    user = result.scalar_one()
+    
     return UserResponse(
-        id=current_user.id,
-        username=current_user.username,
-        email=current_user.email,
-        avatar_url=current_user.avatar_url,
-        roles=[role.name for role in current_user.roles],
-        discord_id=current_user.discord_id,
-        google_id=current_user.google_id,
-        is_active=current_user.is_active,
-        is_verified=current_user.is_verified,
-        created_at=current_user.created_at,
-        updated_at=current_user.updated_at
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        avatar_url=user.avatar_url,
+        roles=[role.name for role in user.roles],
+        discord_id=user.discord_id,
+        google_id=user.google_id,
+        is_active=user.is_active,
+        is_verified=user.is_verified,
+        created_at=user.created_at,
+        updated_at=user.updated_at
     )
 
 # ============ REFRESH ============
@@ -431,7 +466,6 @@ async def refresh_token(
     payload = verify_token(refresh_token_value, "refresh")
     user_id = payload.get("sub")
     
-    # Verificar se sessão existe e está ativa
     result = await db.execute(
         select(Session).where(
             Session.user_id == user_id,
@@ -444,21 +478,21 @@ async def refresh_token(
     if not session:
         raise HTTPException(401, "Refresh token inválido ou revogado")
     
-    # Desativar sessão antiga
     session.is_active = False
     
-    # Obter usuário
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.roles))
+        .where(User.id == user_id)
+    )
     user = result.scalar_one_or_none()
     
     if not user:
         raise HTTPException(401, "Usuário não encontrado")
     
-    # Criar novos tokens
     new_access_token = create_access_token({"sub": str(user.id)})
     new_refresh_token = create_refresh_token({"sub": str(user.id)})
     
-    # Criar nova sessão
     new_session = Session(
         user_id=user.id,
         access_token=new_access_token,
@@ -466,14 +500,19 @@ async def refresh_token(
         expires_at=datetime.now(timezone.utc) + timedelta(days=settings.ACCESS_TOKEN_EXPIRE_DAYS)
     )
     db.add(new_session)
+    await db.flush()
+    await db.commit()
     
-    # Atualizar cookies
-    response.set_cookie("access_token", new_access_token,
-                       max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
-                       httponly=True, secure=False, samesite="lax", path="/")
-    response.set_cookie("refresh_token", new_refresh_token,
-                       max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-                       httponly=True, secure=False, samesite="lax", path="/")
+    response.set_cookie(
+        "access_token", new_access_token,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
+        httponly=True, secure=False, samesite="lax", path="/"
+    )
+    response.set_cookie(
+        "refresh_token", new_refresh_token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+        httponly=True, secure=False, samesite="lax", path="/"
+    )
     
     print(f"🔄 Token renovado para: {user.username}")
     
@@ -507,7 +546,6 @@ async def logout(
     access_token = request.cookies.get("access_token")
     
     if access_token:
-        # Buscar e desativar sessão
         result = await db.execute(
             select(Session).where(
                 Session.access_token == access_token,
@@ -518,9 +556,10 @@ async def logout(
         
         if session:
             session.is_active = False
+            await db.flush()
+            await db.commit()
             print(f"👋 Logout: usuário {session.user_id}")
     
-    # Limpar cookies
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")
     
