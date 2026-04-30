@@ -27,11 +27,44 @@ class UserLoginRequest(BaseModel):
     email: EmailStr
     password: str
 
+class UserProfileUpdate(BaseModel):  # ← NOVO
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    bio: Optional[str] = None
+    
+    @field_validator('username')
+    @classmethod
+    def username_min_length(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) < 3:
+            raise ValueError('Username deve ter no mínimo 3 caracteres')
+        return v.lower() if v else v
+
+class UserPasswordUpdate(BaseModel):  # ← NOVO
+    current_password: str
+    new_password: str
+    confirm_new_password: str
+    
+    @field_validator('confirm_new_password')
+    @classmethod
+    def passwords_match(cls, v: str, info) -> str:
+        if 'new_password' in info.data and v != info.data['new_password']:
+            raise ValueError('Senhas não conferem')
+        return v
+    
+    @field_validator('new_password')
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if len(v) < 6:
+            raise ValueError('Senha deve ter no mínimo 6 caracteres')
+        return v
+
 class UserResponse(BaseModel):
     id: uuid.UUID
     username: str
     email: str
     avatar_url: Optional[str] = None
+    banner_url: Optional[str] = None  # ← NOVO
+    bio: Optional[str] = None  # ← NOVO
     is_active: bool
     is_verified: bool
     roles: List[str] = []
