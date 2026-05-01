@@ -12,7 +12,7 @@ class Guild(Base):
     __tablename__ = "guilds"
     
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    prefix: Mapped[str] = mapped_column(String(10), default="!")
+    prefix: Mapped[str] = mapped_column(String(10), default="a!")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), 
         default=lambda: datetime.now(timezone.utc)
