@@ -10,7 +10,8 @@ from app.schemas.user import UserResponse, UserProfileUpdate, UserPasswordUpdate
 from app.utils.security import get_current_user, hash_password, verify_password
 from app.utils.uploads import (
     ensure_directories, validate_image, delete_old_file,
-    save_image, AVATARS_DIR, BANNERS_DIR
+    save_image, is_animated_gif,  # ← ADICIONAR is_animated_gif
+    AVATARS_DIR, BANNERS_DIR
 )
 
 router = APIRouter(prefix="/me", tags=["Perfil"])
@@ -89,8 +90,19 @@ async def upload_avatar(
     """Upload de avatar"""
     validate_image(file)
     await ensure_directories()
+    
+    # Ler conteúdo para verificar se é GIF animado
+    content = await file.read()
+    await file.seek(0)  # Voltar ao início para save_image ler
+    
     await save_image(file, AVATARS_DIR, str(current_user.id))
-    current_user.avatar_url = f"/uploads/avatars/{str(current_user.id)}.webp"
+    
+    # Definir URL correta
+    if file.filename.endswith('.gif') and is_animated_gif(content):
+        current_user.avatar_url = f"/uploads/avatars/{str(current_user.id)}.gif"
+    else:
+        current_user.avatar_url = f"/uploads/avatars/{str(current_user.id)}.webp"
+    
     await db.flush()
     await db.commit()
     
@@ -123,8 +135,19 @@ async def upload_banner(
     """Upload de banner"""
     validate_image(file)
     await ensure_directories()
+    
+    # Ler conteúdo para verificar se é GIF animado
+    content = await file.read()
+    await file.seek(0)  # Voltar ao início para save_image ler
+    
     await save_image(file, BANNERS_DIR, str(current_user.id))
-    current_user.banner_url = f"/uploads/banners/{str(current_user.id)}.webp"
+    
+    # Definir URL correta
+    if file.filename.endswith('.gif') and is_animated_gif(content):
+        current_user.banner_url = f"/uploads/banners/{str(current_user.id)}.gif"
+    else:
+        current_user.banner_url = f"/uploads/banners/{str(current_user.id)}.webp"
+    
     await db.flush()
     await db.commit()
     
