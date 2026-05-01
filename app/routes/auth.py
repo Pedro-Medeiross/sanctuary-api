@@ -427,3 +427,30 @@ async def logout(request: Request, response: Response, db: AsyncSession = Depend
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")
     return {"message": "Logout realizado com sucesso"}
+
+# ============ DISCORD TOKEN ============
+
+@router.get("/discord/token")
+async def get_discord_token(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retorna o token do Discord do usuário logado"""
+    from app.models.user_connection import ConnectionProvider
+    
+    result = await db.execute(
+        select(UserConnection).where(
+            UserConnection.user_id == current_user.id,
+            UserConnection.provider == ConnectionProvider.DISCORD,
+            UserConnection.is_active == True
+        )
+    )
+    connection = result.scalar_one_or_none()
+    
+    if not connection:
+        raise HTTPException(404, "Nenhuma conta Discord vinculada")
+    
+    return {
+        "access_token": connection.access_token,
+        "expires_at": connection.token_expires_at
+    }
