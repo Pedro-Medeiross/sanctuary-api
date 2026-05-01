@@ -271,3 +271,35 @@ async def get_guild_full_config(
         "created_at": guild.created_at.isoformat() if guild.created_at else None,
         "updated_at": guild.updated_at.isoformat() if guild.updated_at else None
     }
+    
+@router.post("/sync")
+async def sync_guilds(
+    guild_ids: list[int],  # Lista de IDs das guilds que o bot está
+    db: AsyncSession = Depends(get_db),
+    bot_user: str = Depends(verify_bot_auth)
+):
+    """Sincroniza guilds - cria as que não existem ainda"""
+    created = []
+    existing = []
+    
+    for guild_id in guild_ids:
+        result = await db.execute(select(Guild).where(Guild.id == guild_id))
+        guild = result.scalar_one_or_none()
+        
+        if not guild:
+            guild = Guild(id=guild_id)
+            db.add(guild)
+            created.append(guild_id)
+        else:
+            existing.append(guild_id)
+    
+    await db.flush()
+    await db.commit()
+    
+    print(f"✅ Sync: {len(created)} criadas, {len(existing)} já existiam")
+    
+    return {
+        "created": created,
+        "existing": existing,
+        "total": len(guild_ids)
+    }
