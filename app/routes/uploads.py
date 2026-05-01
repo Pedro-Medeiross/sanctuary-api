@@ -39,7 +39,6 @@ def is_animated_gif(content: bytes) -> bool:
     try:
         img = Image.open(io.BytesIO(content))
         if img.format == "GIF":
-            # Verifica se tem mais de 1 frame
             frames = 0
             for _ in ImageSequence.Iterator(img):
                 frames += 1
