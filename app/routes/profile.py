@@ -10,7 +10,7 @@ from app.schemas.user import UserResponse, UserProfileUpdate, UserPasswordUpdate
 from app.utils.security import get_current_user, hash_password, verify_password
 from app.utils.uploads import (
     ensure_directories, validate_image, delete_old_file,
-    save_image, is_animated_gif,  # ← ADICIONAR is_animated_gif
+    save_image, is_animated_gif,
     AVATARS_DIR, BANNERS_DIR
 )
 
