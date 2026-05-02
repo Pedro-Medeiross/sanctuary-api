@@ -20,6 +20,7 @@ from app.utils.security import verify_bot_auth, get_current_user
 from app.models.user import User
 from app.config import settings
 from app.models.guild_stats import GuildStats
+from app.utils.cache import cache_get, cache_set, cache_delete_pattern
 
 router = APIRouter(prefix="/guilds", tags=["Guilds"])
 
@@ -40,11 +41,21 @@ async def get_or_create_guild(guild_id: int, db: AsyncSession) -> Guild:
     
     return guild
 
-async def verify_guild_permission(
-    guild_id: int, 
-    discord_token: str
-) -> bool:
-    """Verifica se o usuário tem permissão na guild via Discord API"""
+async def verify_guild_permission(guild_id: int, discord_token: str, user_id: str = None) -> bool:
+    """Verifica permissão com cache (Redis + Local)"""
+    
+    # Verificar cache
+    if user_id:
+        cache_key = f"discord:guilds:{user_id}"
+        
+        # Verificar cache
+        cached_guilds = await cache_get(cache_key)
+        if cached_guilds:
+            guild_perm = cached_guilds.get(str(guild_id))
+            if guild_perm is not None:
+                return guild_perm
+    
+    # Chamar Discord API
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -56,17 +67,26 @@ async def verify_guild_permission(
                 
                 guilds = await response.json()
                 
+                # Cachear TODAS as guilds
+                if user_id:
+                    guild_perms = {}
+                    for guild in guilds:
+                        permissions = int(guild.get("permissions", 0))
+                        guild_perms[str(guild["id"])] = bool(permissions & 0x8 or permissions & 0x20)
+                    
+                    cache_key = f"discord:guilds:{user_id}"
+                    await cache_set(cache_key, guild_perms, ttl_seconds=300)  # 5 min
+                
                 for guild in guilds:
                     if int(guild["id"]) == guild_id:
                         permissions = int(guild.get("permissions", 0))
-                        # ADMINISTRATOR (0x8) ou MANAGE_GUILD (0x20)
                         return bool(permissions & 0x8 or permissions & 0x20)
                 
                 return False
     except Exception as e:
         print(f"❌ Erro ao verificar permissão: {e}")
         return False
-
+    
 # ============ ROTAS DO BOT (Basic Auth) ============
 
 @router.get("/{guild_id}/prefix", response_model=PrefixResponse)

@@ -27,6 +27,7 @@ from app.utils.security import (
     verify_password,
     verify_app_auth
 )
+from app.utils.cache import cache_delete
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
 
@@ -332,6 +333,7 @@ async def unlink_discord(
     current_user.discord_id = None
     await db.flush()
     await db.commit()
+    await cache_delete(f"discord:guilds:{str(current_user.id)}")
     
     print(f"🔗 Discord desvinculado: {current_user.username}")
     return {"message": "Discord desvinculado com sucesso"}
