@@ -7,7 +7,7 @@ import aiohttp
 from app.database import get_db
 from app.models.user import User
 from app.utils.security import get_current_user
-from app.utils.cache import cache_get, cache_set, cache_delete_pattern
+from app.utils.cache import cache_get, cache_set, cache_delete_pattern, cache_delete
 from app.config import settings
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
