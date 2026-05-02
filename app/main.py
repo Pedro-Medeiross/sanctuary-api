@@ -8,7 +8,8 @@ import time
 from app.config import settings
 from app.database import create_tables, create_default_roles, engine
 from app.utils.security import verify_app_auth
-from app.routes import guilds, auth, dashboard, profile, uploads, logs
+from app.routes import guilds, auth, dashboard, profile, uploads
+from app.routes.logs import router as logs_router, ws_router
 from app.database_mongo import init_mongo, close_mongo
 
 @asynccontextmanager
@@ -68,7 +69,8 @@ app.include_router(profile.router)
 app.include_router(guilds.router)
 app.include_router(dashboard.router)
 app.include_router(uploads.router)
-app.include_router(logs.router)
+app.include_router(logs_router)
+app.include_router(ws_router)
 
 # Tratamento global de exceções
 @app.exception_handler(Exception)

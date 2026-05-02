@@ -10,7 +10,11 @@ from app.models.action_log import ActionLog
 from app.utils.security import verify_bot_auth, get_current_user
 from app.services.websocket_manager import ws_manager
 
+# Router REST (prefixo /guilds)
 router = APIRouter(prefix="/guilds", tags=["Logs"])
+
+# Router WebSocket (SEM prefixo)
+ws_router = APIRouter(tags=["WebSocket"])
 
 # ============ BOT: ENVIAR LOG ============
 
@@ -37,7 +41,6 @@ async def create_log(
     
     result = await mongo_db.action_logs.insert_one(log.to_dict())
     
-    # Notificar WebSockets
     log_response = log.to_response()
     log_response["id"] = str(result.inserted_id)
     
@@ -66,27 +69,20 @@ async def get_logs(
         raise HTTPException(503, "Serviço de logs indisponível")
     
     mongo_db = get_mongo()
-    
-    # Construir filtro
     query = {"guild_id": guild_id}
     
     if log_type:
         query["log_type"] = log_type
-    
     if user_id:
         query["user_id"] = user_id
-    
-    # Filtro por data
     if before:
         query["created_at"] = {"$lt": datetime.fromisoformat(before)}
-    
     if after:
         if "created_at" in query:
             query["created_at"]["$gt"] = datetime.fromisoformat(after)
         else:
             query["created_at"] = {"$gt": datetime.fromisoformat(after)}
     
-    # Buscar logs
     cursor = mongo_db.action_logs.find(query).sort("created_at", -1).limit(limit)
     
     logs = []
@@ -95,7 +91,6 @@ async def get_logs(
         log.id = doc["_id"]
         logs.append(log.to_response())
     
-    # Contar total
     total = await mongo_db.action_logs.count_documents({"guild_id": guild_id})
     
     return {
@@ -119,7 +114,6 @@ async def get_log_stats(
     
     mongo_db = get_mongo()
     
-    # Agregação: contagem por tipo
     pipeline = [
         {"$match": {"guild_id": guild_id}},
         {"$group": {
@@ -146,16 +140,15 @@ async def get_log_stats(
         "by_type": stats_by_type
     }
 
-# ============ WEBSOCKET: TEMPO REAL ============
+# ============ WEBSOCKET (router separado, sem prefixo) ============
 
-@router.websocket("/ws/{guild_id}/logs")
+@ws_router.websocket("/ws/guilds/{guild_id}/logs")
 async def websocket_logs(
     websocket: WebSocket,
     guild_id: int,
     token: str = Query(None)
 ):
     """WebSocket para receber logs em tempo real"""
-    # Autenticar via token JWT
     if not token:
         await websocket.close(code=4001, reason="Token não fornecido")
         return
@@ -171,10 +164,8 @@ async def websocket_logs(
         await websocket.close(code=4001, reason="Token inválido")
         return
     
-    # Conectar
     await ws_manager.connect(websocket, guild_id)
     
-    # Enviar logs recentes ao conectar
     try:
         if is_mongo_available():
             mongo_db = get_mongo()
@@ -193,11 +184,9 @@ async def websocket_logs(
                 "logs": recent_logs
             })
         
-        # Manter conexão aberta
         while True:
             try:
-                # Ping/pong para manter vivo
-                data = await websocket.receive_text()
+                await websocket.receive_text()
             except WebSocketDisconnect:
                 break
             except Exception:
