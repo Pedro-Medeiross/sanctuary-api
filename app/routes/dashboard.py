@@ -133,68 +133,67 @@ async def get_guild_channels(
         return cached
     
     async with aiohttp.ClientSession() as session:
-        async with session.get(
-            f"{DISCORD_API_URL}/users/@me/guilds",
-            headers={"Authorization": f"Bearer {discord_token}"}
-        ) as guilds_response:
-            if guilds_response.status != 200:
-                raise HTTPException(403, "Sem permissão para acessar esta guild")
-            
-            guilds = await guilds_response.json()
-            has_permission = False
-            
-            for guild in guilds:
-                if int(guild["id"]) == guild_id:
-                    permissions = int(guild.get("permissions", 0))
-                    if permissions & 0x8 or permissions & 0x20:
-                        has_permission = True
-                    break
-            
-            if not has_permission:
-                raise HTTPException(403, "Você não tem permissão para gerenciar esta guild")
+        # Tentar com token do BOT primeiro (mais confiável)
+        bot_token = settings.DISCORD_BOT_TOKEN
         
-        async with session.get(
-            f"{DISCORD_API_URL}/guilds/{guild_id}/channels",
-            headers={"Authorization": f"Bearer {discord_token}"}
-        ) as channels_response:
-            if channels_response.status != 200:
-                raise HTTPException(400, "Falha ao obter canais")
-            
-            channels = await channels_response.json()
-            
-            categories = []
-            text_channels = []
-            voice_channels = []
-            
-            for ch in channels:
-                channel_info = {
-                    "id": ch["id"],
-                    "name": ch["name"],
-                    "type": ch["type"],
-                    "position": ch["position"],
-                    "parent_id": ch.get("parent_id")
-                }
-                
-                if ch["type"] == 4:
-                    categories.append(channel_info)
-                elif ch["type"] == 0:
-                    text_channels.append(channel_info)
-                elif ch["type"] == 2:
-                    voice_channels.append(channel_info)
-            
-            result = {
-                "guild_id": guild_id,
-                "categories": sorted(categories, key=lambda x: x["position"]),
-                "text_channels": sorted(text_channels, key=lambda x: x["position"]),
-                "voice_channels": sorted(voice_channels, key=lambda x: x["position"]),
-                "total": len(channels)
+        if bot_token:
+            async with session.get(
+                f"{DISCORD_API_URL}/guilds/{guild_id}/channels",
+                headers={"Authorization": f"Bot {bot_token}"}
+            ) as channels_response:
+                if channels_response.status == 200:
+                    channels = await channels_response.json()
+                else:
+                    # Fallback: tentar com token do usuário
+                    async with session.get(
+                        f"{DISCORD_API_URL}/guilds/{guild_id}/channels",
+                        headers={"Authorization": f"Bearer {discord_token}"}
+                    ) as user_channels_response:
+                        if user_channels_response.status != 200:
+                            raise HTTPException(400, "Falha ao obter canais")
+                        channels = await user_channels_response.json()
+        else:
+            # Sem bot token, usar token do usuário
+            async with session.get(
+                f"{DISCORD_API_URL}/guilds/{guild_id}/channels",
+                headers={"Authorization": f"Bearer {discord_token}"}
+            ) as channels_response:
+                if channels_response.status != 200:
+                    raise HTTPException(400, "Falha ao obter canais")
+                channels = await channels_response.json()
+        
+        categories = []
+        text_channels = []
+        voice_channels = []
+        
+        for ch in channels:
+            channel_info = {
+                "id": ch["id"],
+                "name": ch["name"],
+                "type": ch["type"],
+                "position": ch["position"],
+                "parent_id": ch.get("parent_id")
             }
             
-            # ========== SALVAR NO CACHE (5 min) ==========
-            await cache_set(cache_key, result, ttl_seconds=300)
-            
-            print(f"✅ Canais carregados para guild {guild_id}: {len(channels)}")
-            return result
+            if ch["type"] == 4:
+                categories.append(channel_info)
+            elif ch["type"] == 0:
+                text_channels.append(channel_info)
+            elif ch["type"] == 2:
+                voice_channels.append(channel_info)
+        
+        result = {
+            "guild_id": guild_id,
+            "categories": sorted(categories, key=lambda x: x["position"]),
+            "text_channels": sorted(text_channels, key=lambda x: x["position"]),
+            "voice_channels": sorted(voice_channels, key=lambda x: x["position"]),
+            "total": len(channels)
+        }
+        
+        await cache_set(cache_key, result, ttl_seconds=300)
+        
+        print(f"✅ Canais carregados para guild {guild_id}: {len(channels)}")
+        return result
         
 @router.post("/guilds/{guild_id}/sync-channels")
 async def sync_guild_channels(
@@ -214,32 +213,54 @@ async def sync_guild_channels(
     
     # Buscar canais atualizados da Discord API
     async with aiohttp.ClientSession() as session:
+        # Tentar com token do BOT primeiro (mais confiável, não expira)
+        bot_token = settings.DISCORD_BOT_TOKEN
+        headers = {"Authorization": f"Bot {bot_token}"} if bot_token else {"Authorization": f"Bearer {discord_token}"}
+        
         async with session.get(
             f"{DISCORD_API_URL}/guilds/{guild_id}/channels",
-            headers={"Authorization": f"Bearer {discord_token}"}
+            headers=headers
         ) as channels_response:
             if channels_response.status != 200:
-                raise HTTPException(400, "Falha ao obter canais")
-            
-            guild_channels = await channels_response.json()
-            
-            channels = [
-                {
-                    "id": ch["id"],
-                    "name": ch["name"],
-                    "type": ch["type"],
-                    "position": ch["position"],
-                    "parent_id": ch.get("parent_id")
-                }
-                for ch in guild_channels
-                if ch["type"] in [0, 2, 4]
-            ]
-            channels.sort(key=lambda x: x["position"])
+                # Fallback: tentar com token do usuário
+                async with session.get(
+                    f"{DISCORD_API_URL}/guilds/{guild_id}/channels",
+                    headers={"Authorization": f"Bearer {discord_token}"}
+                ) as fallback_response:
+                    if fallback_response.status != 200:
+                        raise HTTPException(400, "Falha ao obter canais")
+                    guild_channels = await fallback_response.json()
+            else:
+                guild_channels = await channels_response.json()
+        
+        channels = [
+            {
+                "id": ch["id"],
+                "name": ch["name"],
+                "type": ch["type"],
+                "position": ch["position"],
+                "parent_id": ch.get("parent_id")
+            }
+            for ch in guild_channels
+            if ch["type"] in [0, 2, 4]
+        ]
+        channels.sort(key=lambda x: x["position"])
     
     # Atualizar cache
     await cache_set(
         f"discord:channels:{guild_id}:{str(current_user.id)}",
         {"channels": channels},
+        ttl_seconds=300
+    )
+    await cache_set(
+        f"discord:channels:detail:{guild_id}:{str(current_user.id)}",
+        {
+            "guild_id": guild_id,
+            "categories": [c for c in channels if c["type"] == 4],
+            "text_channels": [c for c in channels if c["type"] == 0],
+            "voice_channels": [c for c in channels if c["type"] == 2],
+            "total": len(channels)
+        },
         ttl_seconds=300
     )
     
@@ -248,7 +269,7 @@ async def sync_guild_channels(
     text = [c for c in channels if c["type"] == 0]
     voice = [c for c in channels if c["type"] == 2]
     
-    print(f"🔄 Cache de canais atualizado: guild {guild_id}")
+    print(f"🔄 Cache de canais atualizado: guild {guild_id} ({len(channels)} canais)")
     
     return {
         "message": "Canais sincronizados com sucesso",

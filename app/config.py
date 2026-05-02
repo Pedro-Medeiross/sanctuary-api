@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     #Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     
+    #Bot
+    DISCORD_BOT_TOKEN: str = ""
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
