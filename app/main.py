@@ -7,19 +7,21 @@ import time
 
 from app.config import settings
 from app.database import create_tables, create_default_roles, engine
-from app.routes import guilds, auth, dashboard
 from app.utils.security import verify_app_auth
-from app.routes import guilds, auth, dashboard, profile, uploads
+from app.routes import guilds, auth, dashboard, profile, uploads, logs
+from app.database_mongo import init_mongo, close_mongo
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🚀 Iniciando API...")
     await create_tables()
     await create_default_roles()
+    await init_mongo()
     print("✅ Banco de dados inicializado")
     yield
     print("🛑 Finalizando API...")
     await engine.dispose()
+    await close_mongo()
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -66,6 +68,7 @@ app.include_router(profile.router)
 app.include_router(guilds.router)
 app.include_router(dashboard.router)
 app.include_router(uploads.router)
+app.include_router(logs.router)
 
 # Tratamento global de exceções
 @app.exception_handler(Exception)

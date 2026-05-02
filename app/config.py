@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     
+    # MongoDB (Logs)
+    MONGODB_URL: str = "mongodb://admin:password@localhost:27017"
+    MONGODB_DB: str = "sanctuary_logs"
+    
     # App
     APP_NAME: str = "Sanctuary API"
     DEBUG: bool = True
