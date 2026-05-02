@@ -3,12 +3,49 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict
 
 VALID_LOG_TYPES = [
-    "voice", "message_delete", "message_edit", "message_pin",
-    "member_join", "member_leave", "member_ban", "member_unban",
-    "member_timeout", "member_nickname", "member_roles",
-    "channel_create", "channel_delete", "channel_edit",
-    "role_create", "role_delete", "role_update",
-    "guild_update", "invite_create", "invite_delete"
+    # Message Events
+    "message_delete",
+    "message_edit",
+    "image_delete",
+    "bulk_message_delete",
+    "log_invites",
+    "moderator_commands",
+    
+    # Member Events
+    "member_join",
+    "member_leave",
+    "member_role_add",
+    "member_role_remove",
+    "member_timeout",
+    "member_nickname",
+    "member_ban",
+    "member_unban",
+    "member_avatar_update",
+    
+    # Role Events
+    "role_create",
+    "role_delete",
+    "role_update",
+    
+    # Channel Events
+    "channel_create",
+    "channel_update",
+    "channel_delete",
+    
+    # Emoji Events
+    "emoji_create",
+    "emoji_name_change",
+    "emoji_delete",
+    
+    # Voice Events
+    "voice_join",
+    "voice_leave",
+    "voice_move",
+    
+    # Server Events
+    "guild_update",
+    "server_avatar_update",
+    "server_banner_update",
 ]
 
 class LogChannelResponse(BaseModel):
@@ -33,9 +70,8 @@ class LogChannelUpdate(BaseModel):
         json_schema_extra = {
             "example": {
                 "channels": {
-                    "voice": 123456789,
-                    "message_delete": 123456790,
-                    "member_join": None
+                    "message_delete": 123456789,
+                    "member_join": 123456790,
                 }
             }
         }
