@@ -1,7 +1,6 @@
 # app/models/action_log.py
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
-from bson import ObjectId
 
 class ActionLog:
     """Modelo para logs de ação (MongoDB)"""
@@ -22,10 +21,9 @@ class ActionLog:
         self.target_id = target_id
         self.channel_id = channel_id
         self.data = data or {}
-        self.created_at = created_at or datetime.now(timezone.utc)
+        self.created_at = created_at or datetime.now(timezone.utc)  # ← UTC
     
     def to_dict(self) -> Dict[str, Any]:
-        """Converte para dicionário para inserção no MongoDB"""
         return {
             "guild_id": self.guild_id,
             "log_type": self.log_type,
@@ -38,7 +36,11 @@ class ActionLog:
     
     @staticmethod
     def from_dict(doc: Dict[str, Any]) -> "ActionLog":
-        """Cria instância a partir de documento MongoDB"""
+        created_at = doc.get("created_at")
+        # Garantir timezone se vier sem
+        if created_at and created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        
         return ActionLog(
             guild_id=doc.get("guild_id"),
             log_type=doc.get("log_type"),
@@ -46,11 +48,10 @@ class ActionLog:
             target_id=doc.get("target_id"),
             channel_id=doc.get("channel_id"),
             data=doc.get("data", {}),
-            created_at=doc.get("created_at")
+            created_at=created_at
         )
     
     def to_response(self) -> Dict[str, Any]:
-        """Formato para resposta JSON"""
         return {
             "id": str(self.id) if hasattr(self, 'id') else None,
             "guild_id": str(self.guild_id),

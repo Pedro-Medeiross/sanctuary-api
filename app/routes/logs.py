@@ -1,7 +1,7 @@
 # app/routes/logs.py
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, WebSocket, WebSocketDisconnect
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 from app.database import get_db
 from app.database_mongo import get_mongo, is_mongo_available
@@ -36,7 +36,8 @@ async def create_log(
         user_id=log_data.get("user_id"),
         target_id=log_data.get("target_id"),
         channel_id=log_data.get("channel_id"),
-        data=log_data.get("data", {})
+        data=log_data.get("data", {}),
+        created_at=datetime.now(timezone.utc)  # ← Garantir UTC
     )
     
     result = await mongo_db.action_logs.insert_one(log.to_dict())
@@ -73,15 +74,25 @@ async def get_logs(
     
     if log_type:
         query["log_type"] = log_type
+    
     if user_id:
         query["user_id"] = user_id
+    
+    # Filtros de data COM timezone
     if before:
-        query["created_at"] = {"$lt": datetime.fromisoformat(before)}
+        before_dt = datetime.fromisoformat(before)
+        if before_dt.tzinfo is None:
+            before_dt = before_dt.replace(tzinfo=timezone.utc)
+        query["created_at"] = {"$lt": before_dt}
+    
     if after:
+        after_dt = datetime.fromisoformat(after)
+        if after_dt.tzinfo is None:
+            after_dt = after_dt.replace(tzinfo=timezone.utc)
         if "created_at" in query:
-            query["created_at"]["$gt"] = datetime.fromisoformat(after)
+            query["created_at"]["$gt"] = after_dt
         else:
-            query["created_at"] = {"$gt": datetime.fromisoformat(after)}
+            query["created_at"] = {"$gt": after_dt}
     
     cursor = mongo_db.action_logs.find(query).sort("created_at", -1).limit(limit)
     
@@ -128,9 +139,10 @@ async def get_log_stats(
     total = 0
     
     async for doc in mongo_db.action_logs.aggregate(pipeline):
+        last_event = doc.get("last_event")
         stats_by_type[doc["_id"]] = {
             "count": doc["count"],
-            "last_event": doc["last_event"].isoformat() if doc.get("last_event") else None
+            "last_event": last_event.isoformat() if last_event else None
         }
         total += doc["count"]
     
