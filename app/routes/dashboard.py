@@ -63,8 +63,13 @@ async def list_manageable_guilds(
                 
                 # ========== CACHE DE CANAIS POR GUILD ==========
                 channels_cache_key = f"discord:channels:{guild['id']}:{str(current_user.id)}"
-                channels = await cache_get(channels_cache_key)
-                
+                cached_data = await cache_get(channels_cache_key)  # ← Renomear
+
+                if cached_data and isinstance(cached_data, dict):
+                    channels = cached_data.get("channels", [])
+                else:
+                    channels = None
+
                 if channels is None:
                     async with session.get(
                         f"{DISCORD_API_URL}/guilds/{guild['id']}/channels",
@@ -89,8 +94,6 @@ async def list_manageable_guilds(
                     
                     # Salvar canais em cache (5 min)
                     await cache_set(channels_cache_key, {"channels": channels}, ttl_seconds=300)
-                else:
-                    channels = cached.get("channels", [])
                 
                 manageable_guilds.append({
                     "id": guild["id"],
