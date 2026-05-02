@@ -19,6 +19,7 @@ from app.schemas.log_channel import (
 from app.utils.security import verify_bot_auth, get_current_user
 from app.models.user import User
 from app.config import settings
+from app.models.guild_stats import GuildStats
 
 router = APIRouter(prefix="/guilds", tags=["Guilds"])
 
@@ -253,6 +254,11 @@ async def get_guild_full_config(
     guild = await get_or_create_guild(guild_id, db)
     
     result = await db.execute(
+        select(GuildStats).where(GuildStats.guild_id == guild_id)
+    )
+    stats = result.scalar_one_or_none()
+    
+    result = await db.execute(
         select(LogChannel).where(LogChannel.guild_id == guild_id)
     )
     log_channels = result.scalars().all()
@@ -268,6 +274,13 @@ async def get_guild_full_config(
         "guild_id": guild.id,
         "prefix": guild.prefix,
         "log_channels": channels_config,
+        "stats": {
+            "member_count": stats.member_count if stats else 0,
+            "online_count": stats.online_count if stats else 0,
+            "channel_count": stats.channel_count if stats else 0,
+            "role_count": stats.role_count if stats else 0,
+            "updated_at": stats.updated_at.isoformat() if stats else None,
+        },
         "created_at": guild.created_at.isoformat() if guild.created_at else None,
         "updated_at": guild.updated_at.isoformat() if guild.updated_at else None
     }
@@ -303,3 +316,32 @@ async def sync_guilds(
         "existing": existing,
         "total": len(guild_ids)
     }
+    
+@router.put("/{guild_id}/stats")
+async def update_guild_stats(
+    guild_id: int,
+    stats_data: dict,  # { member_count, online_count, channel_count, role_count }
+    db: AsyncSession = Depends(get_db),
+    bot_user: str = Depends(verify_bot_auth)
+):
+    """[Bot] Atualiza estatísticas da guild"""
+    guild = await get_or_create_guild(guild_id, db)
+    
+    result = await db.execute(
+        select(GuildStats).where(GuildStats.guild_id == guild_id)
+    )
+    stats = result.scalar_one_or_none()
+    
+    if not stats:
+        stats = GuildStats(guild_id=guild_id)
+        db.add(stats)
+    
+    stats.member_count = stats_data.get("member_count", 0)
+    stats.online_count = stats_data.get("online_count", 0)
+    stats.channel_count = stats_data.get("channel_count", 0)
+    stats.role_count = stats_data.get("role_count", 0)
+    
+    await db.flush()
+    await db.commit()
+    
+    return {"message": "Stats atualizados", "guild_id": guild_id}
