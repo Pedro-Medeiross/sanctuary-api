@@ -195,3 +195,66 @@ async def get_guild_channels(
             
             print(f"✅ Canais carregados para guild {guild_id}: {len(channels)}")
             return result
+        
+@router.post("/guilds/{guild_id}/sync-channels")
+async def sync_guild_channels(
+    guild_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user)
+):
+    """Força atualização do cache de canais de uma guild"""
+    discord_token = request.headers.get("X-Discord-Token")
+    if not discord_token:
+        raise HTTPException(400, "Token do Discord não fornecido")
+    
+    # Limpar cache de canais dessa guild
+    await cache_delete(f"discord:channels:{guild_id}:{str(current_user.id)}")
+    await cache_delete(f"discord:channels:detail:{guild_id}:{str(current_user.id)}")
+    await cache_delete(f"discord:guilds:list:{str(current_user.id)}")
+    
+    # Buscar canais atualizados da Discord API
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"{DISCORD_API_URL}/guilds/{guild_id}/channels",
+            headers={"Authorization": f"Bearer {discord_token}"}
+        ) as channels_response:
+            if channels_response.status != 200:
+                raise HTTPException(400, "Falha ao obter canais")
+            
+            guild_channels = await channels_response.json()
+            
+            channels = [
+                {
+                    "id": ch["id"],
+                    "name": ch["name"],
+                    "type": ch["type"],
+                    "position": ch["position"],
+                    "parent_id": ch.get("parent_id")
+                }
+                for ch in guild_channels
+                if ch["type"] in [0, 2, 4]
+            ]
+            channels.sort(key=lambda x: x["position"])
+    
+    # Atualizar cache
+    await cache_set(
+        f"discord:channels:{guild_id}:{str(current_user.id)}",
+        {"channels": channels},
+        ttl_seconds=300
+    )
+    
+    # Organizar por tipo
+    categories = [c for c in channels if c["type"] == 4]
+    text = [c for c in channels if c["type"] == 0]
+    voice = [c for c in channels if c["type"] == 2]
+    
+    print(f"🔄 Cache de canais atualizado: guild {guild_id}")
+    
+    return {
+        "message": "Canais sincronizados com sucesso",
+        "guild_id": guild_id,
+        "categories": categories,
+        "text_channels": text,
+        "voice_channels": voice,
+        "total": len(channels)
+    }
