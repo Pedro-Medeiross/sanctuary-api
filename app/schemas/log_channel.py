@@ -9,7 +9,7 @@ VALID_LOG_TYPES = [
     "image_delete",
     "bulk_message_delete",
     "log_invites",
-    "moderator_commands",
+    "mod_commands",
     
     # Member Events
     "member_join",
