@@ -17,10 +17,10 @@ VALID_LOG_TYPES = [
     "member_role_add",
     "member_role_remove",
     "member_timeout",
-    "member_nickname",
+    "nickname_change",
     "member_ban",
     "member_unban",
-    "member_avatar_update",
+    "avatar_update",
     
     # Role Events
     "role_create",
