@@ -30,6 +30,11 @@ from app.utils.security import verify_bot_auth, get_current_user
 from app.services.websocket_manager import ws_manager
 from app.config import settings
 
+from app.services.bot_notifier import (
+    notify_panel_created, notify_panel_updated, notify_panel_deleted,
+    notify_ticket_created, notify_ticket_closed, notify_ticket_claimed
+)
+
 router = APIRouter(prefix="/guilds", tags=["Tickets"])
 ws_router = APIRouter(tags=["WebSocket Tickets"])
 
@@ -218,6 +223,16 @@ async def create_panel(
     await db.flush()
     await db.commit()
     
+    await notify_panel_created(guild_id, {
+        "id": panel.id,
+        "title": panel.title,
+        "description": panel.description,
+        "button_label": panel.button_label,
+        "button_color": panel.button_color,
+        "category_id": panel.category_id,
+        "support_roles": panel.support_roles,
+    })
+    
     return TicketPanelResponse.model_validate(panel)
 
 @router.put("/{guild_id}/tickets/panels/{panel_id}", response_model=TicketPanelResponse)
@@ -245,6 +260,17 @@ async def update_panel(
     await db.flush()
     await db.commit()
     
+    await notify_panel_updated(guild_id, {
+        "id": panel.id,
+        "title": panel.title,
+        "description": panel.description,
+        "button_label": panel.button_label,
+        "button_color": panel.button_color,
+        "category_id": panel.category_id,
+        "support_roles": panel.support_roles,
+        "is_active": panel.is_active,
+    })
+    
     return TicketPanelResponse.model_validate(panel)
 
 @router.delete("/{guild_id}/tickets/panels/{panel_id}")
@@ -266,6 +292,8 @@ async def delete_panel(
     
     panel.is_active = False
     await db.commit()
+    
+    await notify_panel_deleted(guild_id, str(panel.id))
     
     return {"message": "Painel desativado com sucesso"}
 
@@ -526,6 +554,8 @@ async def close_ticket(
         "reason": close_data.reason
     })
     
+    await notify_ticket_closed(guild_id, str(ticket_id), str(current_user.id), close_data.reason)
+    
     return {"message": "Ticket fechado com sucesso"}
 
 # ============ BOT: ABRIR TICKET ============
@@ -565,6 +595,12 @@ async def open_ticket(
         }
     })
     
+    await notify_ticket_created(guild_id, {
+        "id": ticket.id,
+        "channel_id": ticket.channel_id,
+        "user_id": ticket.user_id,
+    })
+    
     return {"id": str(ticket.id), "created_at": ticket.created_at.isoformat()}
 
 # ============ BOT: REINVINDICAR TICKET ============
@@ -596,6 +632,8 @@ async def claim_ticket(
         "ticket_id": str(ticket_id),
         "claimed_by": str(staff_id)
     })
+    
+    await notify_ticket_claimed(guild_id, str(ticket_id), str(staff_id))
     
     return {"message": "Ticket reinvindicado"}
 
