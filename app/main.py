@@ -7,10 +7,11 @@ import time
 
 from app.config import settings
 from app.database import create_tables, create_default_roles, engine
-from app.utils.security import verify_app_auth
-from app.routes import guilds, auth, dashboard, profile, uploads
-from app.routes.logs import router as logs_router, ws_router
 from app.database_mongo import init_mongo, close_mongo
+from app.routes import guilds, auth, dashboard, profile, uploads
+from app.routes.logs import router as logs_router, ws_router as logs_ws_router
+from app.routes.tickets import router as tickets_router, ws_router as tickets_ws_router
+from app.utils.security import verify_app_auth
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,14 +31,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS - Restringir em produção
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3001",
-        "http://192.168.101.17:3001",
-        "http://127.0.0.1:3001",
-    ],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,25 +49,29 @@ async def log_requests(request: Request, call_next):
     print(f"📝 {request.method} {request.url.path} - {response.status_code} - {duration:.2f}s")
     return response
 
-# Rotas
+# Health check
 @app.get("/health")
 async def health_check(
-    app_user: str = Depends(verify_app_auth)  # ← ADICIONAR BASIC AUTH
+    app_user: str = Depends(verify_app_auth)
 ):
-    """Health check"""
     return {
         "status": "ok",
         "timestamp": time.time(),
         "version": "1.0.0"
     }
 
+# Routers REST
 app.include_router(auth.router)
 app.include_router(profile.router)
 app.include_router(guilds.router)
 app.include_router(dashboard.router)
 app.include_router(uploads.router)
 app.include_router(logs_router)
-app.include_router(ws_router)
+app.include_router(tickets_router)
+
+# Routers WebSocket
+app.include_router(logs_ws_router)
+app.include_router(tickets_ws_router)
 
 # Tratamento global de exceções
 @app.exception_handler(Exception)
@@ -89,6 +90,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=8000,  # ← 8000 (sua porta original)
+        port=8001,
         reload=True
     )
