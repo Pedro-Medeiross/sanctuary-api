@@ -28,6 +28,7 @@ from app.utils.security import (
     verify_app_auth
 )
 from app.utils.cache import cache_delete
+from app.utils.security import get_valid_discord_token
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
 
@@ -437,9 +438,14 @@ async def get_discord_token(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Retorna o token do Discord do usuário logado"""
-    from app.models.user_connection import ConnectionProvider
+    """Retorna o token do Discord do usuário logado (com auto-renew)"""
     
+    token = await get_valid_discord_token(current_user.id, db)
+    
+    if not token:
+        raise HTTPException(404, "Nenhuma conta Discord vinculada ou token expirado")
+
+    # Buscar connection de novo pra pegar expires_at atualizado
     result = await db.execute(
         select(UserConnection).where(
             UserConnection.user_id == current_user.id,
@@ -449,10 +455,7 @@ async def get_discord_token(
     )
     connection = result.scalar_one_or_none()
     
-    if not connection:
-        raise HTTPException(404, "Nenhuma conta Discord vinculada")
-    
     return {
-        "access_token": connection.access_token,
-        "expires_at": connection.token_expires_at
+        "access_token": token,
+        "expires_at": connection.token_expires_at.isoformat() if connection and connection.token_expires_at else None
     }

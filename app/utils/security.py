@@ -13,6 +13,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.session import Session
 from app.models.role import Role
+import aiohttp
 
 # Basic Auth for Bot
 basic_security = HTTPBasic()
@@ -193,6 +194,70 @@ async def require_role(role_name: str):
         return user
     
     return role_checker
+
+
+async def refresh_discord_token(connection) -> bool:
+    """Renova o token do Discord usando refresh_token"""
+    if not connection.refresh_token:
+        print("⚠️ Sem refresh_token disponível")
+        return False
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://discord.com/api/v10/oauth2/token",
+                data={
+                    "client_id": settings.DISCORD_CLIENT_ID,
+                    "client_secret": settings.DISCORD_CLIENT_SECRET,
+                    "grant_type": "refresh_token",
+                    "refresh_token": connection.refresh_token,
+                }
+            ) as resp:
+                if resp.status != 200:
+                    error = await resp.text()
+                    print(f"❌ Discord refresh falhou: {error}")
+                    return False
+                
+                data = await resp.json()
+        
+        connection.access_token = data["access_token"]
+        connection.refresh_token = data.get("refresh_token", connection.refresh_token)
+        connection.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=data.get("expires_in", 604800))
+        
+        print(f"🔄 Discord token renovado")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Erro ao renovar token Discord: {e}")
+        return False
+
+async def get_valid_discord_token(user_id, db: AsyncSession) -> str | None:
+    """Retorna um token Discord válido, renovando se necessário"""
+    from app.models.user_connection import UserConnection, ConnectionProvider
+    
+    result = await db.execute(
+        select(UserConnection).where(
+            UserConnection.user_id == user_id,
+            UserConnection.provider == ConnectionProvider.DISCORD,
+            UserConnection.is_active == True
+        )
+    )
+    connection = result.scalar_one_or_none()
+    
+    if not connection:
+        return None
+    
+    # Verificar se expirou
+    if connection.token_expires_at and connection.token_expires_at < datetime.now(timezone.utc):
+        print(f"⏰ Token Discord expirado, renovando...")
+        renewed = await refresh_discord_token(connection)
+        if renewed:
+            await db.commit()
+        else:
+            print(f"❌ Não foi possível renovar token Discord")
+            return None
+    
+    return connection.access_token
 
 # Dependencies pré-configuradas
 require_admin = require_role("admin")

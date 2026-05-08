@@ -1,6 +1,7 @@
 # app/routes/dashboard.py
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from typing import List, Dict
 import aiohttp
 
@@ -9,6 +10,7 @@ from app.models.user import User
 from app.utils.security import get_current_user
 from app.utils.cache import cache_get, cache_set, cache_delete_pattern, cache_delete
 from app.config import settings
+from app.utils.security import get_valid_discord_token
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -29,10 +31,15 @@ async def get_user_guilds_info(
 @router.get("/guilds/list")
 async def list_manageable_guilds(
     request: Request,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)  # ← Adicionar
 ):
-    """Lista guilds do usuário com cache (2 min)"""
+    """Lista guilds do usuário com cache (2 min) e auto-renew"""
+    
+    # Tentar header primeiro, fallback auto-renew
     discord_token = request.headers.get("X-Discord-Token")
+    if not discord_token:
+        discord_token = await get_valid_discord_token(current_user.id, db)
     
     if not discord_token:
         raise HTTPException(400, "Token do Discord não fornecido")
@@ -54,8 +61,44 @@ async def list_manageable_guilds(
                 error_text = await guilds_response.text()
                 print(f"❌ Discord API error {guilds_response.status}: {error_text}")
                 print(f"🔑 Token usado: {discord_token[:20]}...")
-                raise HTTPException(400, f"Falha ao obter guilds do Discord (status {guilds_response.status})")
-            guilds = await guilds_response.json()
+                
+                # Se falhou, limpar cache e tentar renovar
+                if guilds_response.status == 401:
+                    await cache_delete(cache_key)
+                    # Forçar renovação
+                    from app.utils.security import refresh_discord_token
+                    from app.models.user_connection import UserConnection, ConnectionProvider
+                    
+                    result = await db.execute(
+                        select(UserConnection).where(
+                            UserConnection.user_id == current_user.id,
+                            UserConnection.provider == ConnectionProvider.DISCORD,
+                            UserConnection.is_active == True
+                        )
+                    )
+                    conn = result.scalar_one_or_none()
+                    if conn:
+                        renewed = await refresh_discord_token(conn)
+                        if renewed:
+                            await db.commit()
+                            discord_token = conn.access_token
+                            # Tentar de novo
+                            async with session.get(
+                                f"{DISCORD_API_URL}/users/@me/guilds",
+                                headers={"Authorization": f"Bearer {discord_token}"}
+                            ) as retry_response:
+                                if retry_response.status == 200:
+                                    guilds = await retry_response.json()
+                                else:
+                                    raise HTTPException(400, "Falha ao obter guilds do Discord")
+                        else:
+                            raise HTTPException(400, "Token expirado. Vincule o Discord novamente.")
+                    else:
+                        raise HTTPException(400, "Nenhuma conexão Discord encontrada")
+                else:
+                    raise HTTPException(400, f"Falha ao obter guilds do Discord (status {guilds_response.status})")
+            else:
+                guilds = await guilds_response.json()
         
         manageable_guilds = []
         
@@ -64,9 +107,8 @@ async def list_manageable_guilds(
             
             if permissions & 0x8 or permissions & 0x20:
                 
-                # ========== CACHE DE CANAIS POR GUILD ==========
                 channels_cache_key = f"discord:channels:{guild['id']}:{str(current_user.id)}"
-                cached_data = await cache_get(channels_cache_key)  # ← Renomear
+                cached_data = await cache_get(channels_cache_key)
 
                 if cached_data and isinstance(cached_data, dict):
                     channels = cached_data.get("channels", [])
@@ -95,7 +137,6 @@ async def list_manageable_guilds(
                         else:
                             channels = []
                     
-                    # Salvar canais em cache (5 min)
                     await cache_set(channels_cache_key, {"channels": channels}, ttl_seconds=300)
                 
                 manageable_guilds.append({
@@ -110,7 +151,6 @@ async def list_manageable_guilds(
         
         result = {"guilds": manageable_guilds, "total": len(manageable_guilds)}
         
-        # ========== SALVAR NO CACHE (2 min) ==========
         await cache_set(cache_key, result, ttl_seconds=120)
         
         print(f"✅ Guilds carregadas para {current_user.username}: {len(manageable_guilds)}")
