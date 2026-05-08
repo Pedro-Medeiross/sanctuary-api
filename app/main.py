@@ -8,7 +8,7 @@ import time
 from app.config import settings
 from app.database import create_tables, create_default_roles, engine
 from app.database_mongo import init_mongo, close_mongo
-from app.routes import guilds, auth, dashboard, profile, uploads
+from app.routes import guilds, auth, dashboard, profile, uploads, roles
 from app.routes.logs import router as logs_router, ws_router as logs_ws_router
 from app.routes.tickets import router as tickets_router, ws_router as tickets_ws_router
 from app.utils.security import verify_app_auth
@@ -68,6 +68,7 @@ app.include_router(dashboard.router)
 app.include_router(uploads.router)
 app.include_router(logs_router)
 app.include_router(tickets_router)
+app.include_router(roles.router)
 
 # Routers WebSocket
 app.include_router(logs_ws_router)
