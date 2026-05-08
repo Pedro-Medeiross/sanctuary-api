@@ -158,7 +158,9 @@ async def get_discord_login_url(app_user: str = Depends(verify_app_auth)):
         f"https://discord.com/api/oauth2/authorize"
         f"?client_id={settings.DISCORD_CLIENT_ID}"
         f"&redirect_uri={settings.DISCORD_REDIRECT_URI}"
-        f"&response_type=code&scope=identify%20email%20guilds"
+        f"&response_type=code"
+        f"&scope=identify%20email%20guilds"
+        f"&prompt=consent"
     )
     return {"url": url}
 
@@ -225,8 +227,10 @@ async def discord_auth(
     
     connection = UserConnection(
         user_id=user.id, provider=ConnectionProvider.DISCORD,
-        provider_user_id=str(discord_id), access_token=token_data["access_token"],
+        provider_user_id=str(discord_id), 
+        access_token=token_data["access_token"],
         refresh_token=token_data.get("refresh_token"),
+        token_expires_at=datetime.now(timezone.utc) + timedelta(seconds=token_data.get("expires_in", 604800)),  # ← ADICIONAR
         provider_username=discord_user["username"],
         provider_email=discord_user.get("email"),
         provider_avatar=discord_user.get("avatar")
@@ -295,9 +299,11 @@ async def link_discord(
     current_user.avatar_url = current_user.avatar_url or f"https://cdn.discordapp.com/avatars/{discord_id}/{discord_user['avatar']}.png"
     
     connection = UserConnection(
-        user_id=current_user.id, provider=ConnectionProvider.DISCORD,
-        provider_user_id=str(discord_id), access_token=token_data["access_token"],
+        user_id=user.id, provider=ConnectionProvider.DISCORD,
+        provider_user_id=str(discord_id), 
+        access_token=token_data["access_token"],
         refresh_token=token_data.get("refresh_token"),
+        token_expires_at=datetime.now(timezone.utc) + timedelta(seconds=token_data.get("expires_in", 604800)),  # ← ADICIONAR
         provider_username=discord_user["username"],
         provider_email=discord_user.get("email"),
         provider_avatar=discord_user.get("avatar")

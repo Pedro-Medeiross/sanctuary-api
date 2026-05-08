@@ -197,7 +197,6 @@ async def require_role(role_name: str):
 
 
 async def refresh_discord_token(connection) -> bool:
-    """Renova o token do Discord usando refresh_token"""
     if not connection.refresh_token:
         print("⚠️ Sem refresh_token disponível")
         return False
@@ -215,7 +214,7 @@ async def refresh_discord_token(connection) -> bool:
             ) as resp:
                 if resp.status != 200:
                     error = await resp.text()
-                    print(f"❌ Discord refresh falhou: {error}")
+                    print(f"❌ Discord refresh falhou ({resp.status}): {error}")
                     return False
                 
                 data = await resp.json()
@@ -224,11 +223,11 @@ async def refresh_discord_token(connection) -> bool:
         connection.refresh_token = data.get("refresh_token", connection.refresh_token)
         connection.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=data.get("expires_in", 604800))
         
-        print(f"🔄 Discord token renovado")
+        print(f"🔄 Discord token renovado até {connection.token_expires_at}")
         return True
         
     except Exception as e:
-        print(f"❌ Erro ao renovar token Discord: {e}")
+        print(f"❌ Erro ao renovar token: {e}")
         return False
 
 async def get_valid_discord_token(user_id, db: AsyncSession) -> str | None:
