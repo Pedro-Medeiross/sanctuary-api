@@ -217,7 +217,6 @@ async def create_panel(
         button_label=panel_data.button_label,
         button_color=panel_data.button_color,
         category_id=panel_data.category_id,
-        support_roles=panel_data.support_roles,
     )
     db.add(panel)
     await db.flush()

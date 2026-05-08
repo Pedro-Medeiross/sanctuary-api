@@ -9,19 +9,19 @@ class TicketPanelCreate(BaseModel):
     description: Optional[str] = None
     button_label: str = Field(default="Abrir Ticket", max_length=80)
     button_color: str = Field(default="green")
+    channel_id: int
     category_id: Optional[int] = None
-    support_roles: Optional[List[int]] = None
-
+    
 class TicketPanelUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     button_label: Optional[str] = None
     button_color: Optional[str] = None
+    channel_id: Optional[int] = None
     category_id: Optional[int] = None
-    support_roles: Optional[List[int]] = None
     is_active: Optional[bool] = None
 
-class TicketPanelResponse(BaseModel):
+class TicketPanelResponse(BaseModel):   
     id: uuid.UUID
     guild_id: int
     channel_id: Optional[int] = None
@@ -31,7 +31,6 @@ class TicketPanelResponse(BaseModel):
     button_label: str
     button_color: str
     category_id: Optional[int] = None
-    support_roles: Optional[List[int]] = None
     is_active: bool
     created_at: datetime
     updated_at: datetime

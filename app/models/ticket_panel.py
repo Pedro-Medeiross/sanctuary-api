@@ -18,7 +18,6 @@ class TicketPanel(Base):
     button_label: Mapped[str] = mapped_column(String(80), default="Abrir Ticket")
     button_color: Mapped[str] = mapped_column(String(20), default="green")
     category_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    support_roles: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     form_fields: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
