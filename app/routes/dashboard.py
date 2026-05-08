@@ -51,7 +51,10 @@ async def list_manageable_guilds(
             headers={"Authorization": f"Bearer {discord_token}"}
         ) as guilds_response:
             if guilds_response.status != 200:
-                raise HTTPException(400, "Falha ao obter guilds do Discord")
+                error_text = await guilds_response.text()
+                print(f"❌ Discord API error {guilds_response.status}: {error_text}")
+                print(f"🔑 Token usado: {discord_token[:20]}...")
+                raise HTTPException(400, f"Falha ao obter guilds do Discord (status {guilds_response.status})")
             guilds = await guilds_response.json()
         
         manageable_guilds = []
