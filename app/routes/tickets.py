@@ -277,6 +277,7 @@ async def delete_panel(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    """Remove permanentemente o painel"""
     result = await db.execute(
         select(TicketPanel).where(
             TicketPanel.id == panel_id,
@@ -287,12 +288,46 @@ async def delete_panel(
     if not panel:
         raise HTTPException(404, "Painel não encontrado")
     
-    panel.is_active = False
+    # Hard delete - remove do banco
+    await db.delete(panel)
     await db.commit()
     
+    # Notificar bot
     await notify_panel_deleted(guild_id, str(panel.id))
     
-    return {"message": "Painel desativado com sucesso"}
+    return {"message": "Painel deletado permanentemente"}
+
+@router.put("/{guild_id}/tickets/panels/{panel_id}/toggle")
+async def toggle_panel(
+    guild_id: int,
+    panel_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Ativa/Desativa um painel sem deletar"""
+    result = await db.execute(
+        select(TicketPanel).where(
+            TicketPanel.id == panel_id,
+            TicketPanel.guild_id == guild_id
+        )
+    )
+    panel = result.scalar_one_or_none()
+    if not panel:
+        raise HTTPException(404, "Painel não encontrado")
+    
+    panel.is_active = not panel.is_active
+    await db.commit()
+    
+    status = "ativado" if panel.is_active else "desativado"
+    
+    # Notificar bot
+    await notify_panel_updated(guild_id, {
+        "id": panel.id,
+        "title": panel.title,
+        "is_active": panel.is_active,
+    })
+    
+    return {"message": f"Painel {status} com sucesso", "is_active": panel.is_active}
 
 # ============ TICKETS (DASHBOARD) ============
 
