@@ -373,7 +373,8 @@ async def update_panel_message(
     guild_id: int,
     panel_id: uuid.UUID,
     message_data: dict,
-    bot_user: str = Depends(verify_bot_auth)  # ← Basic Auth pro bot!
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)  # ← ADICIONAR
 ):
     """[Bot] Atualiza o message_id do painel"""
     result = await db.execute(
