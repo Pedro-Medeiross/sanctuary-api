@@ -368,6 +368,29 @@ async def resend_panel(
     
     return {"message": "Painel reenviado com sucesso", "panel_id": str(panel.id)}
 
+@router.put("/{guild_id}/tickets/panels/{panel_id}/message")
+async def update_panel_message(
+    guild_id: int,
+    panel_id: uuid.UUID,
+    message_data: dict,
+    bot_user: str = Depends(verify_bot_auth)  # ← Basic Auth pro bot!
+):
+    """[Bot] Atualiza o message_id do painel"""
+    result = await db.execute(
+        select(TicketPanel).where(
+            TicketPanel.id == panel_id,
+            TicketPanel.guild_id == guild_id
+        )
+    )
+    panel = result.scalar_one_or_none()
+    if not panel:
+        raise HTTPException(404, "Painel não encontrado")
+    
+    panel.message_id = message_data.get("message_id")
+    await db.commit()
+    
+    return {"message": "Message ID atualizado", "panel_id": str(panel.id)}
+
 # ============ TICKETS (DASHBOARD) ============
 
 @router.get("/{guild_id}/tickets", response_model=dict)
