@@ -32,7 +32,6 @@ async def notify_panel_created(guild_id: int, panel: dict):
         "button_label": panel["button_label"],
         "button_color": panel["button_color"],
         "category_id": str(panel["category_id"]) if panel.get("category_id") else None,
-        "support_roles": panel.get("support_roles", []),
     })
 
 async def notify_panel_updated(guild_id: int, panel: dict):
@@ -44,7 +43,6 @@ async def notify_panel_updated(guild_id: int, panel: dict):
         "button_label": panel["button_label"],
         "button_color": panel["button_color"],
         "category_id": str(panel["category_id"]) if panel.get("category_id") else None,
-        "support_roles": panel.get("support_roles", []),
         "is_active": panel.get("is_active", True),
     })
 
