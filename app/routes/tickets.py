@@ -392,6 +392,26 @@ async def update_panel_message(
     
     return {"message": "Message ID atualizado", "panel_id": str(panel.id)}
 
+@router.get("/{guild_id}/tickets/panels/{panel_id}", response_model=TicketPanelResponse)
+async def get_panel(
+    guild_id: int,
+    panel_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retorna um painel específico"""
+    result = await db.execute(
+        select(TicketPanel).where(
+            TicketPanel.id == panel_id,
+            TicketPanel.guild_id == guild_id
+        )
+    )
+    panel = result.scalar_one_or_none()
+    if not panel:
+        raise HTTPException(404, "Painel não encontrado")
+    
+    return TicketPanelResponse.model_validate(panel)
+
 # ============ TICKETS (DASHBOARD) ============
 
 @router.get("/{guild_id}/tickets", response_model=dict)
