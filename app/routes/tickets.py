@@ -320,10 +320,15 @@ async def toggle_panel(
     
     status = "ativado" if panel.is_active else "desativado"
     
-    # Notificar bot
+    # Notificar bot com dados completos
     await notify_panel_updated(guild_id, {
         "id": panel.id,
         "title": panel.title,
+        "description": panel.description,
+        "button_label": panel.button_label,
+        "button_color": panel.button_color,
+        "category_id": panel.category_id,
+        "channel_id": panel.channel_id,
         "is_active": panel.is_active,
     })
     
