@@ -334,6 +334,37 @@ async def toggle_panel(
     
     return {"message": f"Painel {status} com sucesso", "is_active": panel.is_active}
 
+@router.post("/{guild_id}/tickets/panels/{panel_id}/resend")
+async def resend_panel(
+    guild_id: int,
+    panel_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Reenvia o embed do painel para o Discord"""
+    result = await db.execute(
+        select(TicketPanel).where(
+            TicketPanel.id == panel_id,
+            TicketPanel.guild_id == guild_id
+        )
+    )
+    panel = result.scalar_one_or_none()
+    if not panel:
+        raise HTTPException(404, "Painel não encontrado")
+    
+    # Notificar bot para recriar o embed
+    await notify_panel_created(guild_id, {
+        "id": panel.id,
+        "title": panel.title,
+        "description": panel.description,
+        "button_label": panel.button_label,
+        "button_color": panel.button_color,
+        "channel_id": panel.channel_id,
+        "category_id": panel.category_id,
+    })
+    
+    return {"message": "Painel reenviado com sucesso", "panel_id": str(panel.id)}
+
 # ============ TICKETS (DASHBOARD) ============
 
 @router.get("/{guild_id}/tickets", response_model=dict)
