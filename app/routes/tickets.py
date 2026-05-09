@@ -229,6 +229,7 @@ async def create_panel(
         "button_label": panel.button_label,
         "button_color": panel.button_color,
         "category_id": panel.category_id,
+        "channel_id": panel.channel_id,
     })
     
     return TicketPanelResponse.model_validate(panel)
@@ -265,6 +266,7 @@ async def update_panel(
         "button_label": panel.button_label,
         "button_color": panel.button_color,
         "category_id": panel.category_id,
+        "channel_id": panel.channel_id,
         "is_active": panel.is_active,
     })
     
