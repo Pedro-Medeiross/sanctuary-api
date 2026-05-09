@@ -299,7 +299,7 @@ async def link_discord(
     current_user.avatar_url = current_user.avatar_url or f"https://cdn.discordapp.com/avatars/{discord_id}/{discord_user['avatar']}.png"
     
     connection = UserConnection(
-        user_id=user.id, provider=ConnectionProvider.DISCORD,
+        user_id=current_user.id, provider=ConnectionProvider.DISCORD,
         provider_user_id=str(discord_id), 
         access_token=token_data["access_token"],
         refresh_token=token_data.get("refresh_token"),
