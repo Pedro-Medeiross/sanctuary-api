@@ -216,6 +216,7 @@ async def create_panel(
         description=panel_data.description,
         button_label=panel_data.button_label,
         button_color=panel_data.button_color,
+        channel_id=panel_data.channel_id,   # ← ADICIONAR AQUI
         category_id=panel_data.category_id,
     )
     db.add(panel)
