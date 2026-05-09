@@ -396,10 +396,10 @@ async def update_panel_message(
 async def get_panel(
     guild_id: int,
     panel_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    bot_user: str = Depends(verify_bot_auth),  # ← Basic Auth
     db: AsyncSession = Depends(get_db)
 ):
-    """Retorna um painel específico"""
+    """[Bot] Retorna um painel específico"""
     result = await db.execute(
         select(TicketPanel).where(
             TicketPanel.id == panel_id,
