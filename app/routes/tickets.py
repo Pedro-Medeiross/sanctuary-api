@@ -682,13 +682,26 @@ async def open_ticket(
     bot_user: str = Depends(verify_bot_auth),
     db: AsyncSession = Depends(get_db)
 ):
-    """[Bot] Abre um novo ticket"""
+    """[Bot] Abre um novo ticket com número sequencial"""
     user_id = int(ticket_data.get("user_id"))
     channel_id = int(ticket_data.get("channel_id"))
     panel_id = ticket_data.get("panel_id")
     
+    # Incrementar contador
+    result = await db.execute(select(TicketConfig).where(TicketConfig.guild_id == guild_id))
+    config = result.scalar_one_or_none()
+    
+    if not config:
+        config = TicketConfig(guild_id=guild_id)
+        db.add(config)
+        await db.flush()
+    
+    config.ticket_counter += 1
+    ticket_number = config.ticket_counter
+    
     ticket = Ticket(
         guild_id=guild_id,
+        ticket_number=ticket_number,
         panel_id=uuid.UUID(panel_id) if panel_id else None,
         channel_id=channel_id,
         user_id=user_id,
@@ -702,6 +715,7 @@ async def open_ticket(
         "ticket": {
             "id": str(ticket.id),
             "guild_id": str(guild_id),
+            "ticket_number": ticket_number,
             "channel_id": str(channel_id),
             "user_id": str(user_id),
             "status": "open",
@@ -710,13 +724,11 @@ async def open_ticket(
         }
     })
     
-    await notify_ticket_created(guild_id, {
-        "id": ticket.id,
-        "channel_id": ticket.channel_id,
-        "user_id": ticket.user_id,
-    })
-    
-    return {"id": str(ticket.id), "created_at": ticket.created_at.isoformat()}
+    return {
+        "id": str(ticket.id),
+        "ticket_number": ticket_number,
+        "created_at": ticket.created_at.isoformat()
+    }
 
 # ============ BOT: REINVINDICAR TICKET ============
 

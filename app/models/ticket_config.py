@@ -13,5 +13,6 @@ class TicketConfig(Base):
     allow_user_close: Mapped[bool] = mapped_column(Boolean, default=True)
     allow_attachments: Mapped[bool] = mapped_column(Boolean, default=True)
     transcript_channel: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    ticket_counter: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

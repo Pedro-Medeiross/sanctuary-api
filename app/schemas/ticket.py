@@ -157,6 +157,7 @@ class TicketConfigResponse(BaseModel):
     allow_user_close: bool
     allow_attachments: bool
     transcript_channel: Optional[int] = None
+    ticket_counter: int = 0
     created_at: datetime
     updated_at: datetime
     class Config: from_attributes = True
