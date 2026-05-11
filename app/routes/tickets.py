@@ -203,6 +203,43 @@ async def get_staff_roles_bot(
     )
     return [StaffRoleResponse.model_validate(r) for r in result.scalars().all()]
 
+@router.get("/{guild_id}/tickets/bot/list")
+async def get_tickets_bot(
+    guild_id: int,
+    status: Optional[str] = Query(None),
+    user_id: Optional[int] = Query(None),
+    limit: int = Query(50, le=200),
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Bot] Lista tickets com filtros"""
+    query = select(Ticket).where(Ticket.guild_id == guild_id)
+    
+    if status:
+        query = query.where(Ticket.status == status)
+    if user_id:
+        query = query.where(Ticket.user_id == user_id)
+    
+    query = query.order_by(Ticket.created_at.desc()).limit(limit)
+    result = await db.execute(query)
+    tickets = result.scalars().all()
+    
+    tickets_response = []
+    for ticket in tickets:
+        tickets_response.append({
+            "id": str(ticket.id),
+            "ticket_number": ticket.ticket_number,
+            "channel_id": str(ticket.channel_id),
+            "user_id": str(ticket.user_id),
+            "claimed_by": str(ticket.claimed_by) if ticket.claimed_by else None,
+            "status": ticket.status.value,
+            "priority": ticket.priority.value,
+            "created_at": ticket.created_at.isoformat(),
+            "closed_at": ticket.closed_at.isoformat() if ticket.closed_at else None,
+        })
+    
+    return {"tickets": tickets_response, "total": len(tickets_response)}
+
 # ============ PAINÉIS ============
 
 @router.get("/{guild_id}/tickets/panels", response_model=List[TicketPanelResponse])
