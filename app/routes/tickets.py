@@ -541,6 +541,60 @@ async def get_panel(
     
     return TicketPanelResponse.model_validate(panel)
 
+@router.post("/{guild_id}/tickets/{ticket_id}/transcript")
+async def upload_transcript(
+    guild_id: int,
+    ticket_id: uuid.UUID,
+    file: UploadFile,
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Bot] Faz upload da transcrição do ticket"""
+    # Verificar se ticket existe
+    result = await db.execute(
+        select(Ticket).where(
+            Ticket.id == ticket_id,
+            Ticket.guild_id == guild_id
+        )
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(404, "Ticket não encontrado")
+    
+    # Validar tipo de arquivo
+    if not file.filename.endswith(('.txt', '.md', '.json', '.html')):
+        raise HTTPException(400, "Formato não permitido. Use: txt, md, json, html")
+    
+    # Criar diretório se não existir
+    import os
+    from pathlib import Path
+    transcript_dir = Path("uploads/transcripts")
+    transcript_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Salvar arquivo
+    file_ext = file.filename.split('.')[-1]
+    filename = f"{guild_id}_{ticket_id}.{file_ext}"
+    filepath = transcript_dir / filename
+    
+    content = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(content)
+    
+    # URL pública
+    transcript_url = f"{settings.API_URL}/uploads/transcripts/{filename}"
+    
+    # Salvar URL no ticket
+    ticket.transcript_url = transcript_url
+    await db.commit()
+    
+    print(f"📝 Transcrição salva: {filename}")
+    
+    return {
+        "message": "Transcrição enviada com sucesso",
+        "url": transcript_url,
+        "filename": filename
+    }
+
 # ============ TICKETS (DASHBOARD) ============
 
 @router.get("/{guild_id}/tickets", response_model=dict)
