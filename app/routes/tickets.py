@@ -277,6 +277,47 @@ async def get_ticket_bot(
         "updated_at": ticket.updated_at.isoformat(),
         "closed_at": ticket.closed_at.isoformat() if ticket.closed_at else None,
     }
+    
+@router.post("/{guild_id}/tickets/{ticket_id}/bot/close")
+async def close_ticket_bot(
+    guild_id: int,
+    ticket_id: uuid.UUID,
+    close_data: dict,
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Bot] Fecha um ticket"""
+    result = await db.execute(
+        select(Ticket).where(
+            Ticket.id == ticket_id,
+            Ticket.guild_id == guild_id
+        )
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(404, "Ticket não encontrado")
+    
+    ticket.status = TicketStatus.CLOSED
+    ticket.closed_by = close_data.get("closed_by")
+    ticket.close_reason = close_data.get("reason")
+    ticket.closed_at = datetime.now(timezone.utc)
+    await db.commit()
+    
+    await ws_manager.broadcast_to_guild(guild_id, {
+        "type": "ticket_closed",
+        "ticket_id": str(ticket_id),
+        "closed_by": str(close_data.get("closed_by")),
+        "reason": close_data.get("reason")
+    })
+    
+    await notify_ticket_closed(
+        guild_id, 
+        str(ticket_id), 
+        str(close_data.get("closed_by", 0)), 
+        close_data.get("reason")
+    )
+    
+    return {"message": "Ticket fechado com sucesso"}
 
 # ============ PAINÉIS ============
 
