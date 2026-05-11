@@ -190,6 +190,19 @@ async def delete_staff_role(
     
     return {"message": "Cargo removido com sucesso"}
 
+
+@router.get("/{guild_id}/tickets/bot/staff-roles", response_model=List[StaffRoleResponse])
+async def get_staff_roles_bot(
+    guild_id: int,
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Bot] Retorna os cargos de staff configurados"""
+    result = await db.execute(
+        select(TicketStaffRole).where(TicketStaffRole.guild_id == guild_id)
+    )
+    return [StaffRoleResponse.model_validate(r) for r in result.scalars().all()]
+
 # ============ PAINÉIS ============
 
 @router.get("/{guild_id}/tickets/panels", response_model=List[TicketPanelResponse])
