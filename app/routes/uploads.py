@@ -54,4 +54,17 @@ async def serve_transcript(filename: str):
     if not filepath.exists():
         raise HTTPException(404, "Transcrição não encontrada")
     
-    return FileResponse(filepath, media_type="text/plain")
+    # Determinar media type pela extensão
+    ext = filename.split('.')[-1].lower()
+    media_types = {
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'webp': 'image/webp',
+        'txt': 'text/plain',
+        'html': 'text/html',
+        'json': 'application/json',
+        'md': 'text/markdown',
+    }
+    
+    return FileResponse(filepath, media_type=media_types.get(ext, 'application/octet-stream'))
