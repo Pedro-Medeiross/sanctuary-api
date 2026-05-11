@@ -298,7 +298,7 @@ async def close_ticket_bot(
         raise HTTPException(404, "Ticket não encontrado")
     
     ticket.status = TicketStatus.CLOSED
-    ticket.closed_by = close_data.get("closed_by")
+    ticket.closed_by = int(close_data.get("closed_by"))
     ticket.close_reason = close_data.get("reason")
     ticket.closed_at = datetime.now(timezone.utc)
     await db.commit()
