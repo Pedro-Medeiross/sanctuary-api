@@ -1,12 +1,12 @@
 # app/routes/tickets.py
-from fastapi import APIRouter, Depends, HTTPException, Request, Query, WebSocket, WebSocketDisconnect
+from __future__ import annotations
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, WebSocket, WebSocketDisconnect, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
 from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from datetime import datetime, timezone, timedelta
 import uuid
-
 from app.database import get_db
 from app.models.user import User
 from app.models.ticket import Ticket, TicketStatus, TicketPriority
