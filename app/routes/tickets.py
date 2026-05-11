@@ -65,6 +65,24 @@ async def get_ticket_config(
     
     return TicketConfigResponse.model_validate(config)
 
+@router.get("/{guild_id}/tickets/bot/config", response_model=TicketConfigResponse)
+async def get_ticket_config_bot(
+    guild_id: int,
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Bot] Retorna as configurações de ticket"""
+    result = await db.execute(select(TicketConfig).where(TicketConfig.guild_id == guild_id))
+    config = result.scalar_one_or_none()
+    
+    if not config:
+        config = TicketConfig(guild_id=guild_id)
+        db.add(config)
+        await db.flush()
+        await db.commit()
+    
+    return TicketConfigResponse.model_validate(config)
+
 @router.put("/{guild_id}/tickets/config", response_model=TicketConfigResponse)
 async def update_ticket_config(
     guild_id: int,
