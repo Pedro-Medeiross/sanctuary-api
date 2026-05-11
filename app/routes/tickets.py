@@ -240,6 +240,44 @@ async def get_tickets_bot(
     
     return {"tickets": tickets_response, "total": len(tickets_response)}
 
+@router.get("/{guild_id}/tickets/bot/{ticket_id}")
+async def get_ticket_bot(
+    guild_id: int,
+    ticket_id: uuid.UUID,
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Bot] Retorna detalhes de um ticket específico"""
+    result = await db.execute(
+        select(Ticket).where(
+            Ticket.id == ticket_id,
+            Ticket.guild_id == guild_id
+        )
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(404, "Ticket não encontrado")
+    
+    members_result = await db.execute(
+        select(TicketMember.user_id).where(TicketMember.ticket_id == ticket.id)
+    )
+    members = [m[0] for m in members_result.all()]
+    
+    return {
+        "id": str(ticket.id),
+        "ticket_number": ticket.ticket_number,
+        "guild_id": str(ticket.guild_id),
+        "channel_id": str(ticket.channel_id),
+        "user_id": str(ticket.user_id),
+        "claimed_by": str(ticket.claimed_by) if ticket.claimed_by else None,
+        "status": ticket.status.value,
+        "priority": ticket.priority.value,
+        "members": members,
+        "created_at": ticket.created_at.isoformat(),
+        "updated_at": ticket.updated_at.isoformat(),
+        "closed_at": ticket.closed_at.isoformat() if ticket.closed_at else None,
+    }
+
 # ============ PAINÉIS ============
 
 @router.get("/{guild_id}/tickets/panels", response_model=List[TicketPanelResponse])
