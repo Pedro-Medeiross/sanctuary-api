@@ -560,14 +560,14 @@ async def get_panel(
     return TicketPanelResponse.model_validate(panel)
 
 @router.post("/{guild_id}/tickets/{ticket_id}/transcript")
-async def upload_transcript(
+async def save_transcript(
     guild_id: int,
     ticket_id: uuid.UUID,
-    file: UploadFile,
+    transcript_data: dict,
     bot_user: str = Depends(verify_bot_auth),
     db: AsyncSession = Depends(get_db)
 ):
-    """[Bot] Faz upload da transcrição do ticket"""
+    """[Bot] Salva a transcrição do ticket como JSON"""
     result = await db.execute(
         select(Ticket).where(
             Ticket.id == ticket_id,
@@ -578,35 +578,72 @@ async def upload_transcript(
     if not ticket:
         raise HTTPException(404, "Ticket não encontrado")
     
-    # Validar tipo de arquivo - aceitar PNG também!
-    if not file.filename.endswith(('.txt', '.md', '.json', '.html', '.png', '.jpg', '.jpeg', '.webp')):
-        raise HTTPException(400, "Formato não permitido. Use: txt, md, json, html, png, jpg, webp")
+    # Salvar JSON no MongoDB (transcripts)
+    from app.database_mongo import get_mongo, is_mongo_available
     
-    import os
-    from pathlib import Path
-    transcript_dir = Path("uploads/transcripts")
-    transcript_dir.mkdir(parents=True, exist_ok=True)
+    if is_mongo_available():
+        mongo_db = get_mongo()
+        
+        # Adicionar timestamp e ID
+        transcript_doc = {
+            **transcript_data,
+            "ticket_id": str(ticket_id),
+            "guild_id": guild_id,
+            "saved_at": datetime.now(timezone.utc),
+        }
+        
+        await mongo_db.ticket_transcripts.insert_one(transcript_doc)
+        print(f"📝 Transcrição salva no MongoDB: {ticket_id}")
     
-    file_ext = file.filename.split('.')[-1]
-    filename = f"{guild_id}_{ticket_id}.{file_ext}"
-    filepath = transcript_dir / filename
-    
-    content = await file.read()
-    with open(filepath, "wb") as f:
-        f.write(content)
-    
-    transcript_url = f"{settings.API_URL}/uploads/transcripts/{filename}"
-    
+    # Salvar URL de referência no PostgreSQL
+    transcript_url = f"{settings.FRONTEND_URL}/transcript/{ticket_id}"
     ticket.transcript_url = transcript_url
     await db.commit()
     
-    print(f"📝 Transcrição salva: {filename}")
-    
     return {
-        "message": "Transcrição enviada com sucesso",
         "url": transcript_url,
-        "filename": filename
+        "message": "Transcrição salva com sucesso"
     }
+    
+@router.get("/{guild_id}/tickets/{ticket_id}/transcript")
+async def get_transcript(
+    guild_id: int,
+    ticket_id: uuid.UUID,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Dashboard] Retorna a transcrição de um ticket"""
+    # Verificar se ticket existe
+    result = await db.execute(
+        select(Ticket).where(
+            Ticket.id == ticket_id,
+            Ticket.guild_id == guild_id
+        )
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(404, "Ticket não encontrado")
+    
+    # Buscar do MongoDB
+    from app.database_mongo import get_mongo, is_mongo_available
+    
+    if not is_mongo_available():
+        raise HTTPException(404, "Transcrição não encontrada")
+    
+    mongo_db = get_mongo()
+    transcript = await mongo_db.ticket_transcripts.find_one(
+        {"ticket_id": str(ticket_id)}
+    )
+    
+    if not transcript:
+        raise HTTPException(404, "Transcrição não encontrada")
+    
+    # Remover _id do MongoDB
+    if "_id" in transcript:
+        del transcript["_id"]
+    
+    return transcript
 
 # ============ TICKETS (DASHBOARD) ============
 

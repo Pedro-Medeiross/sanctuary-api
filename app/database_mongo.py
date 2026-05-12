@@ -32,7 +32,7 @@ async def init_mongo():
         mongo_db = None
 
 async def create_indexes():
-    """Cria índices para performance e TTL"""
+    """Cria índices para performance"""
     if mongo_db is None:
         return
     
@@ -48,17 +48,21 @@ async def create_indexes():
         name="idx_guild_user_date"
     )
     
-    # Índice TTL: auto-delete após 30 dias
-    await mongo_db.action_logs.create_index(
-        "created_at",
-        expireAfterSeconds=2592000,  # 30 dias
-        name="idx_ttl_30d"
-    )
-    
     # Índice para busca por texto
     await mongo_db.action_logs.create_index(
         [("data.content", "text"), ("data.member_name", "text")],
         name="idx_text_search"
+    )
+    
+    # Índice para transcrições
+    await mongo_db.ticket_transcripts.create_index(
+        "ticket_id",
+        unique=True,
+        name="idx_transcript_ticket"
+    )
+    await mongo_db.ticket_transcripts.create_index(
+        "guild_id",
+        name="idx_transcript_guild"
     )
     
     print("✅ Índices MongoDB criados")
