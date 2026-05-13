@@ -1118,6 +1118,40 @@ async def get_feedback_stats(
         "total_feedbacks": len(feedbacks),
         "by_staff": by_staff
     }
+    
+@router.put("/{guild_id}/tickets/{ticket_id}/bot/priority")
+async def update_ticket_priority_bot(
+    guild_id: int,
+    ticket_id: uuid.UUID,
+    priority_data: dict,
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Bot] Atualiza a prioridade do ticket"""
+    result = await db.execute(
+        select(Ticket).where(
+            Ticket.id == ticket_id,
+            Ticket.guild_id == guild_id
+        )
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(404, "Ticket não encontrado")
+    
+    priority = priority_data.get("priority")
+    if priority not in ["low", "medium", "high", "urgent"]:
+        raise HTTPException(400, "Prioridade inválida")
+    
+    ticket.priority = TicketPriority(priority)
+    await db.commit()
+    
+    await ws_manager.broadcast_to_guild(guild_id, {
+        "type": "ticket_priority",
+        "ticket_id": str(ticket_id),
+        "priority": priority
+    })
+    
+    return {"message": "Prioridade atualizada", "priority": priority}
 
 # ============ WEBSOCKET ============
 
