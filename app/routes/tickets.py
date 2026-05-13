@@ -1153,6 +1153,49 @@ async def update_ticket_priority_bot(
     
     return {"message": "Prioridade atualizada", "priority": priority}
 
+@router.post("/{guild_id}/tickets/{ticket_id}/bot/transfer")
+async def transfer_ticket_bot(
+    guild_id: int,
+    ticket_id: uuid.UUID,
+    transfer_data: dict,
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Bot] Transfere um ticket"""
+    result = await db.execute(
+        select(Ticket).where(
+            Ticket.id == ticket_id,
+            Ticket.guild_id == guild_id
+        )
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(404, "Ticket não encontrado")
+    
+    old_staff = ticket.claimed_by
+    new_staff = int(transfer_data.get("to_staff_id"))
+    
+    ticket.claimed_by = new_staff
+    ticket.status = TicketStatus.CLAIMED
+    
+    transfer = TicketTransfer(
+        ticket_id=ticket_id,
+        from_staff=old_staff or 0,
+        to_staff=new_staff,
+        reason=transfer_data.get("reason")
+    )
+    db.add(transfer)
+    await db.commit()
+    
+    await ws_manager.broadcast_to_guild(guild_id, {
+        "type": "ticket_transfer",
+        "ticket_id": str(ticket_id),
+        "from_staff": str(old_staff) if old_staff else None,
+        "to_staff": str(new_staff)
+    })
+    
+    return {"message": "Ticket transferido com sucesso"}
+
 # ============ WEBSOCKET ============
 
 @ws_router.websocket("/ws/guilds/{guild_id}/tickets")
