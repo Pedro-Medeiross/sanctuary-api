@@ -919,6 +919,11 @@ async def open_ticket(
     user_id = int(ticket_data.get("user_id"))
     channel_id = int(ticket_data.get("channel_id"))
     panel_id = ticket_data.get("panel_id")
+    priority = ticket_data.get("priority", "medium")  # ← PEGAR DO PAYLOAD!
+    
+    # Validar prioridade
+    if priority not in ["low", "medium", "high", "urgent"]:
+        priority = "medium"
     
     # Incrementar contador
     result = await db.execute(select(TicketConfig).where(TicketConfig.guild_id == guild_id))
@@ -938,6 +943,7 @@ async def open_ticket(
         panel_id=uuid.UUID(panel_id) if panel_id else None,
         channel_id=channel_id,
         user_id=user_id,
+        priority=TicketPriority(priority),  # ← USAR PRIORIDADE!
     )
     db.add(ticket)
     await db.flush()
@@ -952,7 +958,7 @@ async def open_ticket(
             "channel_id": str(channel_id),
             "user_id": str(user_id),
             "status": "open",
-            "priority": "medium",
+            "priority": priority,  # ← PRIORIDADE CORRETA
             "created_at": ticket.created_at.isoformat()
         }
     })
