@@ -1218,7 +1218,25 @@ async def get_categories(
         .where(TicketCategory.guild_id == guild_id)
         .order_by(TicketCategory.position)
     )
-    return [TicketCategoryResponse.model_validate(c) for c in result.scalars().all()]
+    categories = result.scalars().all()
+    
+    if not categories:
+        return []
+    
+    return [
+        TicketCategoryResponse(
+            id=c.id,
+            guild_id=c.guild_id,
+            name=c.name,
+            label=c.label,
+            emoji=c.emoji,
+            priority=c.priority,
+            position=c.position,
+            is_active=c.is_active,
+            created_at=c.created_at,
+            updated_at=c.updated_at,
+        ) for c in categories
+    ]
 
 @router.post("/{guild_id}/tickets/categories", response_model=TicketCategoryResponse)
 async def create_category(
@@ -1310,7 +1328,26 @@ async def get_categories_bot(
         )
         .order_by(TicketCategory.position)
     )
-    return [TicketCategoryResponse.model_validate(c) for c in result.scalars().all()]
+    categories = result.scalars().all()
+    
+    # Se não tem categorias, retorna lista vazia
+    if not categories:
+        return []
+    
+    return [
+        TicketCategoryResponse(
+            id=c.id,
+            guild_id=c.guild_id,
+            name=c.name,
+            label=c.label,
+            emoji=c.emoji,
+            priority=c.priority,
+            position=c.position,
+            is_active=c.is_active,
+            created_at=c.created_at,
+            updated_at=c.updated_at,
+        ) for c in categories
+    ]
 
 # ============ WEBSOCKET ============
 
