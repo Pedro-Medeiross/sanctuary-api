@@ -1,4 +1,5 @@
 # app/routes/tickets.py
+from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, WebSocket, WebSocketDisconnect, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
@@ -115,7 +116,7 @@ async def update_ticket_config(
 
 # ============ STAFF ROLES ============
 
-@router.get("/{guild_id}/tickets/staff-roles")
+@router.get("/{guild_id}/tickets/staff-roles", response_model=List[StaffRoleResponse])
 async def get_staff_roles(
     guild_id: int,
     current_user: User = Depends(get_current_user),
@@ -221,121 +222,115 @@ async def get_staff_roles_bot(
     )
     return [StaffRoleResponse.model_validate(r) for r in result.scalars().all()]
 
-@router.get("/{guild_id}/tickets/bot/list")
-async def get_tickets_bot(
-    guild_id: int,
-    status: Optional[str] = Query(None),
-    user_id: Optional[int] = Query(None),
-    limit: int = Query(50, le=200),
-    bot_user: str = Depends(verify_bot_auth),
-    db: AsyncSession = Depends(get_db)
-):
-    """[Bot] Lista tickets com filtros"""
-    query = select(Ticket).where(Ticket.guild_id == guild_id)
-    
-    if status:
-        query = query.where(Ticket.status == status)
-    if user_id:
-        query = query.where(Ticket.user_id == user_id)
-    
-    query = query.order_by(Ticket.created_at.desc()).limit(limit)
-    result = await db.execute(query)
-    tickets = result.scalars().all()
-    
-    tickets_response = []
-    for ticket in tickets:
-        tickets_response.append({
-            "id": str(ticket.id),
-            "ticket_number": ticket.ticket_number,
-            "channel_id": str(ticket.channel_id),
-            "user_id": str(ticket.user_id),
-            "claimed_by": str(ticket.claimed_by) if ticket.claimed_by else None,
-            "status": ticket.status.value,
-            "priority": ticket.priority.value,
-            "created_at": ticket.created_at.isoformat(),
-            "closed_at": ticket.closed_at.isoformat() if ticket.closed_at else None,
-        })
-    
-    return {"tickets": tickets_response, "total": len(tickets_response)}
 
-@router.get("/{guild_id}/tickets/bot/{ticket_id}")
-async def get_ticket_bot(
+# ============ CATEGORIAS (DASHBOARD) ============
+
+@router.get("/{guild_id}/tickets/categories", response_model=List[TicketCategoryResponse])
+async def get_categories(
     guild_id: int,
-    ticket_id: uuid.UUID,
-    bot_user: str = Depends(verify_bot_auth),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """[Bot] Retorna detalhes de um ticket específico"""
+    """[Dashboard] Lista categorias de ticket"""
     result = await db.execute(
-        select(Ticket).where(
-            Ticket.id == ticket_id,
-            Ticket.guild_id == guild_id
-        )
+        select(TicketCategory)
+        .where(TicketCategory.guild_id == guild_id)
+        .order_by(TicketCategory.position)
     )
-    ticket = result.scalar_one_or_none()
-    if not ticket:
-        raise HTTPException(404, "Ticket não encontrado")
-    
-    members_result = await db.execute(
-        select(TicketMember.user_id).where(TicketMember.ticket_id == ticket.id)
-    )
-    members = [m[0] for m in members_result.all()]
-    
-    return {
-        "id": str(ticket.id),
-        "ticket_number": ticket.ticket_number,
-        "guild_id": str(ticket.guild_id),
-        "channel_id": str(ticket.channel_id),
-        "user_id": str(ticket.user_id),
-        "claimed_by": str(ticket.claimed_by) if ticket.claimed_by else None,
-        "status": ticket.status.value,
-        "priority": ticket.priority.value,
-        "members": members,
-        "created_at": ticket.created_at.isoformat(),
-        "updated_at": ticket.updated_at.isoformat(),
-        "closed_at": ticket.closed_at.isoformat() if ticket.closed_at else None,
-    }
-    
-@router.post("/{guild_id}/tickets/{ticket_id}/bot/close")
-async def close_ticket_bot(
+    return [TicketCategoryResponse.model_validate(c) for c in result.scalars().all()]
+
+@router.post("/{guild_id}/tickets/categories", response_model=TicketCategoryResponse)
+async def create_category(
     guild_id: int,
-    ticket_id: uuid.UUID,
-    close_data: dict,
-    bot_user: str = Depends(verify_bot_auth),
+    category_data: TicketCategoryCreate,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """[Bot] Fecha um ticket"""
-    result = await db.execute(
-        select(Ticket).where(
-            Ticket.id == ticket_id,
-            Ticket.guild_id == guild_id
-        )
+    """[Dashboard] Cria categoria de ticket"""
+    category = TicketCategory(
+        guild_id=guild_id,
+        name=category_data.name,
+        label=category_data.label,
+        emoji=category_data.emoji,
+        priority=category_data.priority,
+        position=category_data.position,
     )
-    ticket = result.scalar_one_or_none()
-    if not ticket:
-        raise HTTPException(404, "Ticket não encontrado")
-    
-    ticket.status = TicketStatus.CLOSED
-    ticket.closed_by = int(close_data.get("closed_by"))
-    ticket.close_reason = close_data.get("reason")
-    ticket.closed_at = datetime.now(timezone.utc)
+    db.add(category)
+    await db.flush()
     await db.commit()
     
-    await ws_manager.broadcast_to_guild(guild_id, {
-        "type": "ticket_closed",
-        "ticket_id": str(ticket_id),
-        "closed_by": str(close_data.get("closed_by")),
-        "reason": close_data.get("reason")
-    })
-    
-    await notify_ticket_closed(
-        guild_id, 
-        str(ticket_id), 
-        str(close_data.get("closed_by", 0)), 
-        close_data.get("reason")
+    return TicketCategoryResponse.model_validate(category)
+
+@router.put("/{guild_id}/tickets/categories/{category_id}", response_model=TicketCategoryResponse)
+async def update_category(
+    guild_id: int,
+    category_id: uuid.UUID,
+    category_data: TicketCategoryUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Dashboard] Atualiza categoria"""
+    result = await db.execute(
+        select(TicketCategory).where(
+            TicketCategory.id == category_id,
+            TicketCategory.guild_id == guild_id
+        )
     )
+    category = result.scalar_one_or_none()
+    if not category:
+        raise HTTPException(404, "Categoria não encontrada")
     
-    return {"message": "Ticket fechado com sucesso"}
+    update_fields = category_data.model_dump(exclude_unset=True)
+    for field, value in update_fields.items():
+        setattr(category, field, value)
+    
+    await db.flush()
+    await db.commit()
+    
+    return TicketCategoryResponse.model_validate(category)
+
+@router.delete("/{guild_id}/tickets/categories/{category_id}")
+async def delete_category(
+    guild_id: int,
+    category_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Dashboard] Deleta categoria"""
+    result = await db.execute(
+        select(TicketCategory).where(
+            TicketCategory.id == category_id,
+            TicketCategory.guild_id == guild_id
+        )
+    )
+    category = result.scalar_one_or_none()
+    if not category:
+        raise HTTPException(404, "Categoria não encontrada")
+    
+    await db.delete(category)
+    await db.commit()
+    
+    return {"message": "Categoria deletada com sucesso"}
+
+# ============ CATEGORIAS (BOT) ============
+
+@router.get("/{guild_id}/tickets/bot/categories", response_model=List[TicketCategoryResponse])
+async def get_categories_bot(
+    guild_id: int,
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Bot] Lista categorias ativas ordenadas"""
+    result = await db.execute(
+        select(TicketCategory)
+        .where(
+            TicketCategory.guild_id == guild_id,
+            TicketCategory.is_active == True
+        )
+        .order_by(TicketCategory.position)
+    )
+    return [TicketCategoryResponse.model_validate(c) for c in result.scalars().all()]
+
 
 # ============ PAINÉIS ============
 
@@ -558,6 +553,7 @@ async def get_panel(
         raise HTTPException(404, "Painel não encontrado")
     
     return TicketPanelResponse.model_validate(panel)
+
 
 @router.post("/{guild_id}/tickets/{ticket_id}/transcript")
 async def save_transcript(
@@ -1003,6 +999,122 @@ async def claim_ticket(
     
     return {"message": "Ticket reinvindicado"}
 
+@router.get("/{guild_id}/tickets/bot/list")
+async def get_tickets_bot(
+    guild_id: int,
+    status: Optional[str] = Query(None),
+    user_id: Optional[int] = Query(None),
+    limit: int = Query(50, le=200),
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Bot] Lista tickets com filtros"""
+    query = select(Ticket).where(Ticket.guild_id == guild_id)
+    
+    if status:
+        query = query.where(Ticket.status == status)
+    if user_id:
+        query = query.where(Ticket.user_id == user_id)
+    
+    query = query.order_by(Ticket.created_at.desc()).limit(limit)
+    result = await db.execute(query)
+    tickets = result.scalars().all()
+    
+    tickets_response = []
+    for ticket in tickets:
+        tickets_response.append({
+            "id": str(ticket.id),
+            "ticket_number": ticket.ticket_number,
+            "channel_id": str(ticket.channel_id),
+            "user_id": str(ticket.user_id),
+            "claimed_by": str(ticket.claimed_by) if ticket.claimed_by else None,
+            "status": ticket.status.value,
+            "priority": ticket.priority.value,
+            "created_at": ticket.created_at.isoformat(),
+            "closed_at": ticket.closed_at.isoformat() if ticket.closed_at else None,
+        })
+    
+    return {"tickets": tickets_response, "total": len(tickets_response)}
+
+@router.get("/{guild_id}/tickets/bot/{ticket_id}")
+async def get_ticket_bot(
+    guild_id: int,
+    ticket_id: uuid.UUID,
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Bot] Retorna detalhes de um ticket específico"""
+    result = await db.execute(
+        select(Ticket).where(
+            Ticket.id == ticket_id,
+            Ticket.guild_id == guild_id
+        )
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(404, "Ticket não encontrado")
+    
+    members_result = await db.execute(
+        select(TicketMember.user_id).where(TicketMember.ticket_id == ticket.id)
+    )
+    members = [m[0] for m in members_result.all()]
+    
+    return {
+        "id": str(ticket.id),
+        "ticket_number": ticket.ticket_number,
+        "guild_id": str(ticket.guild_id),
+        "channel_id": str(ticket.channel_id),
+        "user_id": str(ticket.user_id),
+        "claimed_by": str(ticket.claimed_by) if ticket.claimed_by else None,
+        "status": ticket.status.value,
+        "priority": ticket.priority.value,
+        "members": members,
+        "created_at": ticket.created_at.isoformat(),
+        "updated_at": ticket.updated_at.isoformat(),
+        "closed_at": ticket.closed_at.isoformat() if ticket.closed_at else None,
+    }
+    
+@router.post("/{guild_id}/tickets/{ticket_id}/bot/close")
+async def close_ticket_bot(
+    guild_id: int,
+    ticket_id: uuid.UUID,
+    close_data: dict,
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Bot] Fecha um ticket"""
+    result = await db.execute(
+        select(Ticket).where(
+            Ticket.id == ticket_id,
+            Ticket.guild_id == guild_id
+        )
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(404, "Ticket não encontrado")
+    
+    ticket.status = TicketStatus.CLOSED
+    ticket.closed_by = int(close_data.get("closed_by"))
+    ticket.close_reason = close_data.get("reason")
+    ticket.closed_at = datetime.now(timezone.utc)
+    await db.commit()
+    
+    await ws_manager.broadcast_to_guild(guild_id, {
+        "type": "ticket_closed",
+        "ticket_id": str(ticket_id),
+        "closed_by": str(close_data.get("closed_by")),
+        "reason": close_data.get("reason")
+    })
+    
+    await notify_ticket_closed(
+        guild_id, 
+        str(ticket_id), 
+        str(close_data.get("closed_by", 0)), 
+        close_data.get("reason")
+    )
+    
+    return {"message": "Ticket fechado com sucesso"}
+
 # ============ BLOQUEIOS ============
 
 @router.get("/{guild_id}/tickets/bans", response_model=List[TicketBanResponse])
@@ -1201,145 +1313,6 @@ async def transfer_ticket_bot(
     })
     
     return {"message": "Ticket transferido com sucesso"}
-
-
-# ============ CATEGORIAS (DASHBOARD) ============
-
-@router.get("/{guild_id}/tickets/categories")
-async def get_categories(
-    guild_id: int,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """[Dashboard] Lista categorias de ticket"""
-    result = await db.execute(
-        select(TicketCategory)
-        .where(TicketCategory.guild_id == guild_id)
-        .order_by(TicketCategory.position)
-    )
-    categories = result.scalars().all()
-    
-    return [
-        {
-            "id": str(c.id),
-            "guild_id": c.guild_id,
-            "name": c.name,
-            "label": c.label,
-            "emoji": c.emoji,
-            "priority": c.priority,
-            "position": c.position,
-            "is_active": c.is_active,
-            "created_at": c.created_at.isoformat(),
-            "updated_at": c.updated_at.isoformat(),
-        } for c in categories
-    ]
-
-@router.post("/{guild_id}/tickets/categories", response_model=TicketCategoryResponse)
-async def create_category(
-    guild_id: int,
-    category_data: TicketCategoryCreate,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """[Dashboard] Cria categoria de ticket"""
-    category = TicketCategory(
-        guild_id=guild_id,
-        name=category_data.name,
-        label=category_data.label,
-        emoji=category_data.emoji,
-        priority=category_data.priority,
-        position=category_data.position,
-    )
-    db.add(category)
-    await db.flush()
-    await db.commit()
-    
-    return TicketCategoryResponse.model_validate(category)
-
-@router.put("/{guild_id}/tickets/categories/{category_id}", response_model=TicketCategoryResponse)
-async def update_category(
-    guild_id: int,
-    category_id: uuid.UUID,
-    category_data: TicketCategoryUpdate,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """[Dashboard] Atualiza categoria"""
-    result = await db.execute(
-        select(TicketCategory).where(
-            TicketCategory.id == category_id,
-            TicketCategory.guild_id == guild_id
-        )
-    )
-    category = result.scalar_one_or_none()
-    if not category:
-        raise HTTPException(404, "Categoria não encontrada")
-    
-    update_fields = category_data.model_dump(exclude_unset=True)
-    for field, value in update_fields.items():
-        setattr(category, field, value)
-    
-    await db.flush()
-    await db.commit()
-    
-    return TicketCategoryResponse.model_validate(category)
-
-@router.delete("/{guild_id}/tickets/categories/{category_id}")
-async def delete_category(
-    guild_id: int,
-    category_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """[Dashboard] Deleta categoria"""
-    result = await db.execute(
-        select(TicketCategory).where(
-            TicketCategory.id == category_id,
-            TicketCategory.guild_id == guild_id
-        )
-    )
-    category = result.scalar_one_or_none()
-    if not category:
-        raise HTTPException(404, "Categoria não encontrada")
-    
-    await db.delete(category)
-    await db.commit()
-    
-    return {"message": "Categoria deletada com sucesso"}
-
-# ============ CATEGORIAS (BOT) ============
-
-@router.get("/{guild_id}/tickets/bot/categories")
-async def get_categories_bot(
-    guild_id: int,
-    bot_user: str = Depends(verify_bot_auth),
-    db: AsyncSession = Depends(get_db)
-):
-    """[Bot] Lista categorias ativas ordenadas"""
-    result = await db.execute(
-        select(TicketCategory)
-        .where(
-            TicketCategory.guild_id == guild_id,
-            TicketCategory.is_active == True
-        )
-        .order_by(TicketCategory.position)
-    )
-    categories = result.scalars().all()
-    
-    return [
-        {
-            "id": str(c.id),
-            "guild_id": c.guild_id,
-            "name": c.name,
-            "label": c.label,
-            "emoji": c.emoji,
-            "priority": c.priority,
-            "position": c.position,
-            "is_active": c.is_active,
-            "created_at": c.created_at.isoformat(),
-            "updated_at": c.updated_at.isoformat(),
-        } for c in categories
-    ]
 
 # ============ WEBSOCKET ============
 
