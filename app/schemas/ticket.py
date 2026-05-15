@@ -161,3 +161,31 @@ class TicketConfigResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     class Config: from_attributes = True
+    
+class TicketCategoryCreate(BaseModel):
+    name: str = Field(..., max_length=100)
+    label: str = Field(..., max_length=100)
+    emoji: Optional[str] = None
+    priority: str = Field(default="medium", pattern="^(low|medium|high|urgent)$")
+    position: int = Field(default=0)
+
+class TicketCategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    label: Optional[str] = None
+    emoji: Optional[str] = None
+    priority: Optional[str] = None
+    position: Optional[int] = None
+    is_active: Optional[bool] = None
+
+class TicketCategoryResponse(BaseModel):
+    id: uuid.UUID
+    guild_id: int
+    name: str
+    label: str
+    emoji: Optional[str] = None
+    priority: str
+    position: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    class Config: from_attributes = True

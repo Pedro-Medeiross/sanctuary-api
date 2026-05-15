@@ -14,3 +14,4 @@ from app.models.ticket_member import TicketMember
 from app.models.ticket_transfer import TicketTransfer
 from app.models.ticket_ban import TicketBan
 from app.models.ticket_feedback import TicketFeedback
+from app.models.ticket_category import TicketCategory
