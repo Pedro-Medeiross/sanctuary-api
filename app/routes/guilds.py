@@ -1,47 +1,57 @@
-# app/routes/guilds.py (FINAL - CACHE OTIMIZADO)
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Dict
 import aiohttp
 
 from app.database import get_db
-from app.models.guild import Guild
-from app.models.guild_stats import GuildStats
-from app.models.log_channel import LogChannel
-from app.schemas.guild import GuildResponse, PrefixUpdate, PrefixResponse
+from app.models.discord.guild import Guild
+from app.models.discord.guild_stats import GuildStats
+from app.models.discord.log_channel import LogChannel
+from app.models.core.user import User
+from app.schemas.guild import PrefixUpdate, PrefixResponse
 from app.schemas.log_channel import (
-    LogChannelResponse, 
-    SingleLogChannelResponse, 
+    SingleLogChannelResponse,
     LogChannelsList,
     LogChannelUpdate,
-    VALID_LOG_TYPES
 )
 from app.utils.security import verify_bot_auth, get_current_user
 from app.utils.cache import cache_get, cache_set, cache_delete_pattern
-from app.models.user import User
 from app.config import settings
 
 router = APIRouter(prefix="/guilds", tags=["Guilds"])
 
 DISCORD_API_URL = "https://discord.com/api/v10"
 
+
+# ============ HELPERS ============
+
+def _require_discord_token(request: Request) -> str:
+    """Extrai e valida X-Discord-Token do header"""
+    token = request.headers.get("X-Discord-Token")
+    if not token:
+        raise HTTPException(400, "Token do Discord não fornecido")
+    return token
+
+
 async def get_or_create_guild(guild_id: int, db: AsyncSession) -> Guild:
     """Obtém ou cria uma guild automaticamente"""
     result = await db.execute(select(Guild).where(Guild.id == guild_id))
     guild = result.scalar_one_or_none()
-    
+
     if not guild:
         guild = Guild(id=guild_id)
         db.add(guild)
         await db.flush()
         print(f"✅ Nova guild criada: {guild_id}")
-    
+
     return guild
 
-async def verify_guild_permission(guild_id: int, discord_token: str, user_id: str = None) -> bool:
+
+async def verify_guild_permission(
+    guild_id: int, discord_token: str, user_id: str = None
+) -> bool:
     """Verifica permissão com cache (Redis + Local)"""
-    
     if user_id:
         cache_key = f"discord:guilds:perms:{user_id}"
         cached_guilds = await cache_get(cache_key)
@@ -49,7 +59,7 @@ async def verify_guild_permission(guild_id: int, discord_token: str, user_id: st
             guild_perm = cached_guilds.get(str(guild_id))
             if guild_perm is not None:
                 return guild_perm
-    
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -58,26 +68,26 @@ async def verify_guild_permission(guild_id: int, discord_token: str, user_id: st
             ) as response:
                 if response.status != 200:
                     return False
-                
+
                 guilds = await response.json()
-                
+
                 if user_id:
-                    guild_perms = {}
-                    for guild in guilds:
-                        permissions = int(guild.get("permissions", 0))
-                        guild_perms[str(guild["id"])] = bool(permissions & 0x8 or permissions & 0x20)
-                    
+                    guild_perms = {
+                        str(g["id"]): bool(int(g.get("permissions", 0)) & 0x8 or int(g.get("permissions", 0)) & 0x20)
+                        for g in guilds
+                    }
                     await cache_set(f"discord:guilds:perms:{user_id}", guild_perms, ttl_seconds=300)
-                
+
                 for guild in guilds:
                     if int(guild["id"]) == guild_id:
                         permissions = int(guild.get("permissions", 0))
                         return bool(permissions & 0x8 or permissions & 0x20)
-                
+
                 return False
     except Exception as e:
         print(f"❌ Erro ao verificar permissão: {e}")
         return False
+
 
 # ============ ROTAS DO BOT (Basic Auth) ============
 
@@ -91,6 +101,7 @@ async def get_guild_prefix_bot(
     guild = await get_or_create_guild(guild_id, db)
     return PrefixResponse(prefix=guild.prefix, guild_id=guild_id)
 
+
 @router.get("/{guild_id}/log-channel/{log_type}", response_model=SingleLogChannelResponse)
 async def get_log_channel_bot(
     guild_id: int,
@@ -99,20 +110,23 @@ async def get_log_channel_bot(
     bot_user: str = Depends(verify_bot_auth)
 ):
     """[Bot] Retorna o channel_id para um tipo de log específico"""
-    if log_type not in VALID_LOG_TYPES:
-        raise HTTPException(400, f"Tipo de log inválido. Tipos válidos: {', '.join(VALID_LOG_TYPES)}")
-    
     await get_or_create_guild(guild_id, db)
-    
+
     result = await db.execute(
-        select(LogChannel).where(LogChannel.guild_id == guild_id, LogChannel.log_type == log_type)
+        select(LogChannel).where(
+            LogChannel.guild_id == guild_id,
+            LogChannel.log_type == log_type
+        )
     )
     log_channel = result.scalar_one_or_none()
-    
+
     if not log_channel:
         return SingleLogChannelResponse(channel_id=None)
-    
-    return SingleLogChannelResponse(channel_id=log_channel.channel_id if log_channel.enabled else None)
+
+    return SingleLogChannelResponse(
+        channel_id=log_channel.channel_id if log_channel.enabled else None
+    )
+
 
 @router.get("/{guild_id}/log-channels", response_model=LogChannelsList)
 async def get_all_log_channels_bot(
@@ -122,15 +136,17 @@ async def get_all_log_channels_bot(
 ):
     """[Bot] Retorna todos os canais de log da guild"""
     await get_or_create_guild(guild_id, db)
-    
+
     result = await db.execute(select(LogChannel).where(LogChannel.guild_id == guild_id))
     log_channels = result.scalars().all()
-    
-    channels_dict = {}
-    for lc in log_channels:
-        channels_dict[lc.log_type] = lc.channel_id if lc.enabled else None
-    
+
+    channels_dict = {
+        lc.log_type: lc.channel_id if lc.enabled else None
+        for lc in log_channels
+    }
+
     return LogChannelsList(guild_id=guild_id, channels=channels_dict)
+
 
 # ============ ROTAS DO DASHBOARD (JWT + Discord Token) ============
 
@@ -143,20 +159,17 @@ async def update_guild_prefix_dashboard(
     current_user: User = Depends(get_current_user)
 ):
     """[Dashboard] Atualiza o prefixo da guild"""
-    discord_token = request.headers.get("X-Discord-Token")
-    if not discord_token:
-        raise HTTPException(400, "Token do Discord não fornecido")
-    
-    # Verificar permissão COM CACHE
-    has_permission = await verify_guild_permission(guild_id, discord_token, str(current_user.id))
-    if not has_permission:
+    discord_token = _require_discord_token(request)
+
+    if not await verify_guild_permission(guild_id, discord_token, str(current_user.id)):
         raise HTTPException(403, "Você não tem permissão para modificar esta guild")
-    
+
     guild = await get_or_create_guild(guild_id, db)
     guild.prefix = prefix_data.prefix
-    
+
     print(f"📝 Prefixo atualizado: guild={guild_id}, prefix={prefix_data.prefix} por {current_user.username}")
     return PrefixResponse(prefix=guild.prefix, guild_id=guild_id)
+
 
 @router.put("/{guild_id}/log-channels")
 async def update_log_channels_dashboard(
@@ -167,44 +180,44 @@ async def update_log_channels_dashboard(
     current_user: User = Depends(get_current_user)
 ):
     """[Dashboard] Atualiza os canais de log da guild"""
-    discord_token = request.headers.get("X-Discord-Token")
-    if not discord_token:
-        raise HTTPException(400, "Token do Discord não fornecido")
-    
-    # Verificar permissão COM CACHE
-    has_permission = await verify_guild_permission(guild_id, discord_token, str(current_user.id))
-    if not has_permission:
+    discord_token = _require_discord_token(request)
+
+    if not await verify_guild_permission(guild_id, discord_token, str(current_user.id)):
         raise HTTPException(403, "Você não tem permissão para modificar esta guild")
-    
+
     await get_or_create_guild(guild_id, db)
     updated_channels = []
-    
+
     for log_type, channel_id in log_data.channels.items():
-        if log_type not in VALID_LOG_TYPES:
-            raise HTTPException(400, f"Tipo de log inválido '{log_type}'. Tipos válidos: {', '.join(VALID_LOG_TYPES)}")
-        
         result = await db.execute(
-            select(LogChannel).where(LogChannel.guild_id == guild_id, LogChannel.log_type == log_type)
+            select(LogChannel).where(
+                LogChannel.guild_id == guild_id,
+                LogChannel.log_type == log_type
+            )
         )
         log_channel = result.scalar_one_or_none()
-        
+
         if log_channel:
             log_channel.channel_id = channel_id
             log_channel.enabled = channel_id is not None
         else:
-            log_channel = LogChannel(guild_id=guild_id, log_type=log_type, channel_id=channel_id, enabled=channel_id is not None)
+            log_channel = LogChannel(
+                guild_id=guild_id, log_type=log_type,
+                channel_id=channel_id, enabled=channel_id is not None
+            )
             db.add(log_channel)
-        
+
         updated_channels.append(log_channel)
-    
+
     print(f"📝 Canais de log atualizados: guild={guild_id}, canais={len(updated_channels)} por {current_user.username}")
-    
+
     return {
         "message": "Canais de log atualizados com sucesso",
         "guild_id": guild_id,
         "updated_channels": len(updated_channels),
         "updated_by": current_user.username
     }
+
 
 @router.get("/{guild_id}/config", response_model=Dict)
 async def get_guild_full_config(
@@ -214,29 +227,23 @@ async def get_guild_full_config(
     current_user: User = Depends(get_current_user)
 ):
     """[Dashboard] Retorna configuração completa da guild"""
-    # Apenas verifica se o token está presente (sem chamar Discord API)
-    discord_token = request.headers.get("X-Discord-Token")
-    if not discord_token:
-        raise HTTPException(400, "Token do Discord não fornecido")
-    
-    # Permissão já foi verificada no /dashboard/guilds/list
-    
+    _require_discord_token(request)
+
     guild = await get_or_create_guild(guild_id, db)
-    
+
     result = await db.execute(select(GuildStats).where(GuildStats.guild_id == guild_id))
     stats = result.scalar_one_or_none()
-    
+
     result = await db.execute(select(LogChannel).where(LogChannel.guild_id == guild_id))
     log_channels = result.scalars().all()
-    
-    channels_config = {}
-    for lc in log_channels:
-        channels_config[lc.log_type] = {"channel_id": lc.channel_id, "enabled": lc.enabled}
-    
+
     return {
         "guild_id": guild.id,
         "prefix": guild.prefix,
-        "log_channels": channels_config,
+        "log_channels": {
+            lc.log_type: {"channel_id": lc.channel_id, "enabled": lc.enabled}
+            for lc in log_channels
+        },
         "stats": {
             "member_count": stats.member_count if stats else 0,
             "online_count": stats.online_count if stats else 0,
@@ -248,6 +255,7 @@ async def get_guild_full_config(
         "updated_at": guild.updated_at.isoformat() if guild.updated_at else None
     }
 
+
 @router.post("/sync")
 async def sync_guilds(
     guild_ids: list[int],
@@ -256,7 +264,7 @@ async def sync_guilds(
 ):
     """[Bot] Sincroniza guilds"""
     created, existing = [], []
-    
+
     for guild_id in guild_ids:
         result = await db.execute(select(Guild).where(Guild.id == guild_id))
         if not result.scalar_one_or_none():
@@ -264,12 +272,11 @@ async def sync_guilds(
             created.append(guild_id)
         else:
             existing.append(guild_id)
-    
-    await db.flush()
+
     await db.commit()
-    
     print(f"✅ Sync: {len(created)} criadas, {len(existing)} já existiam")
     return {"created": created, "existing": existing, "total": len(guild_ids)}
+
 
 @router.put("/{guild_id}/stats")
 async def update_guild_stats(
@@ -280,23 +287,20 @@ async def update_guild_stats(
 ):
     """[Bot] Atualiza estatísticas da guild"""
     await get_or_create_guild(guild_id, db)
-    
+
     result = await db.execute(select(GuildStats).where(GuildStats.guild_id == guild_id))
     stats = result.scalar_one_or_none()
-    
+
     if not stats:
         stats = GuildStats(guild_id=guild_id)
         db.add(stats)
-    
+
     stats.member_count = stats_data.get("member_count", 0)
     stats.online_count = stats_data.get("online_count", 0)
     stats.channel_count = stats_data.get("channel_count", 0)
     stats.role_count = stats_data.get("role_count", 0)
-    
-    await db.flush()
+
     await db.commit()
-    
-    # Limpar cache de stats quando atualizar
     await cache_delete_pattern(f"discord:guilds:list:*")
-    
+
     return {"message": "Stats atualizados", "guild_id": guild_id}

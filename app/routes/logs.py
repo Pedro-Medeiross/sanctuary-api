@@ -1,12 +1,10 @@
-# app/routes/logs.py
-from fastapi import APIRouter, Depends, HTTPException, Request, Query, WebSocket, WebSocketDisconnect
-from typing import Optional, List
-from datetime import datetime, timezone, timedelta
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from typing import Optional
+from datetime import datetime, timezone
 
-from app.database import get_db
 from app.database_mongo import get_mongo, is_mongo_available
-from app.models.user import User
-from app.models.action_log import ActionLog
+from app.models.core.user import User
+from app.models.mongo.action_log import ActionLog
 from app.utils.security import verify_bot_auth, get_current_user
 from app.services.websocket_manager import ws_manager
 
@@ -15,6 +13,17 @@ router = APIRouter(prefix="/guilds", tags=["Logs"])
 
 # Router WebSocket (SEM prefixo)
 ws_router = APIRouter(tags=["WebSocket"])
+
+
+# ============ HELPERS ============
+
+def _parse_date_filter(date_str: str) -> datetime:
+    """Converte string ISO para datetime com timezone UTC"""
+    dt = datetime.fromisoformat(date_str)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
 
 # ============ BOT: ENVIAR LOG ============
 
@@ -27,9 +36,9 @@ async def create_log(
     """[Bot] Registra um novo log de ação"""
     if not is_mongo_available():
         raise HTTPException(503, "Serviço de logs indisponível")
-    
+
     mongo_db = get_mongo()
-    
+
     log = ActionLog(
         guild_id=guild_id,
         log_type=log_data.get("log_type"),
@@ -37,27 +46,27 @@ async def create_log(
         target_id=log_data.get("target_id"),
         channel_id=log_data.get("channel_id"),
         data=log_data.get("data", {}),
-        created_at=datetime.now(timezone.utc)  # ← Garantir UTC
+        created_at=datetime.now(timezone.utc)
     )
-    
+
     result = await mongo_db.action_logs.insert_one(log.to_dict())
-    
+
     log_response = log.to_response()
     log_response["id"] = str(result.inserted_id)
-    
+
     await ws_manager.broadcast_to_guild(guild_id, {
         "type": "new_log",
         "log": log_response
     })
-    
+
     return {"id": str(result.inserted_id), "created_at": log.created_at.isoformat()}
+
 
 # ============ DASHBOARD: CONSULTAR LOGS ============
 
 @router.get("/{guild_id}/logs")
 async def get_logs(
     guild_id: int,
-    request: Request,
     log_type: Optional[str] = Query(None),
     user_id: Optional[int] = Query(None),
     limit: int = Query(50, le=200),
@@ -68,42 +77,35 @@ async def get_logs(
     """[Dashboard] Consulta logs com filtros"""
     if not is_mongo_available():
         raise HTTPException(503, "Serviço de logs indisponível")
-    
+
     mongo_db = get_mongo()
     query = {"guild_id": guild_id}
-    
+
     if log_type:
         query["log_type"] = log_type
-    
+
     if user_id:
         query["user_id"] = user_id
-    
-    # Filtros de data COM timezone
+
     if before:
-        before_dt = datetime.fromisoformat(before)
-        if before_dt.tzinfo is None:
-            before_dt = before_dt.replace(tzinfo=timezone.utc)
-        query["created_at"] = {"$lt": before_dt}
-    
+        query["created_at"] = {"$lt": _parse_date_filter(before)}
+
     if after:
-        after_dt = datetime.fromisoformat(after)
-        if after_dt.tzinfo is None:
-            after_dt = after_dt.replace(tzinfo=timezone.utc)
+        after_dt = _parse_date_filter(after)
         if "created_at" in query:
             query["created_at"]["$gt"] = after_dt
         else:
             query["created_at"] = {"$gt": after_dt}
-    
+
     cursor = mongo_db.action_logs.find(query).sort("created_at", -1).limit(limit)
-    
+
     logs = []
     async for doc in cursor:
         log = ActionLog.from_dict(doc)
-        log.id = doc["_id"]
         logs.append(log.to_response())
-    
+
     total = await mongo_db.action_logs.count_documents({"guild_id": guild_id})
-    
+
     return {
         "logs": logs,
         "total": total,
@@ -111,20 +113,20 @@ async def get_logs(
         "has_more": len(logs) == limit
     }
 
+
 # ============ DASHBOARD: ESTATÍSTICAS ============
 
 @router.get("/{guild_id}/logs/stats")
 async def get_log_stats(
     guild_id: int,
-    request: Request,
     current_user: User = Depends(get_current_user)
 ):
     """[Dashboard] Estatísticas de logs"""
     if not is_mongo_available():
         raise HTTPException(503, "Serviço de logs indisponível")
-    
+
     mongo_db = get_mongo()
-    
+
     pipeline = [
         {"$match": {"guild_id": guild_id}},
         {"$group": {
@@ -134,10 +136,10 @@ async def get_log_stats(
         }},
         {"$sort": {"count": -1}}
     ]
-    
+
     stats_by_type = {}
     total = 0
-    
+
     async for doc in mongo_db.action_logs.aggregate(pipeline):
         last_event = doc.get("last_event")
         stats_by_type[doc["_id"]] = {
@@ -145,14 +147,15 @@ async def get_log_stats(
             "last_event": last_event.isoformat() if last_event else None
         }
         total += doc["count"]
-    
+
     return {
         "guild_id": guild_id,
         "total_logs": total,
         "by_type": stats_by_type
     }
 
-# ============ WEBSOCKET (router separado, sem prefixo) ============
+
+# ============ WEBSOCKET ============
 
 @ws_router.websocket("/ws/guilds/{guild_id}/logs")
 async def websocket_logs(
@@ -164,38 +167,36 @@ async def websocket_logs(
     if not token:
         await websocket.close(code=4001, reason="Token não fornecido")
         return
-    
+
     from app.utils.security import verify_token
     try:
         payload = verify_token(token, "access")
-        user_id = payload.get("sub")
-        if not user_id:
+        if not payload.get("sub"):
             await websocket.close(code=4001, reason="Token inválido")
             return
     except Exception:
         await websocket.close(code=4001, reason="Token inválido")
         return
-    
+
     await ws_manager.connect(websocket, guild_id)
-    
+
     try:
         if is_mongo_available():
             mongo_db = get_mongo()
             cursor = mongo_db.action_logs.find(
                 {"guild_id": guild_id}
             ).sort("created_at", -1).limit(50)
-            
+
             recent_logs = []
             async for doc in cursor:
                 log = ActionLog.from_dict(doc)
-                log.id = doc["_id"]
                 recent_logs.append(log.to_response())
-            
+
             await websocket.send_json({
                 "type": "initial_logs",
                 "logs": recent_logs
             })
-        
+
         while True:
             try:
                 await websocket.receive_text()

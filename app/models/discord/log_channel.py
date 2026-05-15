@@ -1,11 +1,11 @@
-# app/models/log_channel.py
 from sqlalchemy import BigInteger, String, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.models.guild import Guild
+    from app.models.discord.guild import Guild
+
 
 class LogChannel(Base):
     __tablename__ = "log_channels"
@@ -23,4 +23,5 @@ class LogChannel(Base):
     channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     
+    #Relacionamentos
     guild: Mapped["Guild"] = relationship("Guild", back_populates="log_channels")

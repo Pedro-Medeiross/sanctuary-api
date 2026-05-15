@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import String, DateTime, ForeignKey, Enum as SQLEnum
+from sqlalchemy import String, DateTime, ForeignKey, Boolean, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime, timezone
@@ -8,11 +8,13 @@ from typing import TYPE_CHECKING
 import enum
 
 if TYPE_CHECKING:
-    from app.models.user import User
+    from app.models.core.user import User
+
 
 class ConnectionProvider(str, enum.Enum):
     DISCORD = "discord"
     GOOGLE = "google"
+
 
 class UserConnection(Base):
     __tablename__ = "user_connections"
@@ -35,14 +37,10 @@ class UserConnection(Base):
     access_token: Mapped[str] = mapped_column(String, nullable=True)
     refresh_token: Mapped[str] = mapped_column(String, nullable=True)
     token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
-    
-    # Metadados do provider
     provider_username: Mapped[str] = mapped_column(String(100), nullable=True)
     provider_email: Mapped[str] = mapped_column(String(255), nullable=True)
     provider_avatar: Mapped[str] = mapped_column(String(500), nullable=True)
-    
-    # Status
-    is_active: Mapped[bool] = mapped_column(default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     connected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), 
         default=lambda: datetime.now(timezone.utc)

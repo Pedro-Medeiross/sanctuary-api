@@ -1,17 +1,15 @@
-# app/utils/cache.py
 import json
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, Dict, Any
 import redis.asyncio as redis
 from app.config import settings
 
-# Cache local (fallback)
-_local_cache = {}
-
-# Redis (produção)
+_local_cache: Dict[str, tuple] = {}
 _redis = None
 
+
 async def get_redis():
+    """Retorna conexão Redis ou False se indisponível"""
     global _redis
     if _redis is None:
         try:
@@ -23,9 +21,9 @@ async def get_redis():
             _redis = False
     return _redis
 
-async def cache_get(key: str) -> Optional[dict]:
+
+async def cache_get(key: str) -> Optional[Dict[str, Any]]:
     """Busca do cache (Redis → Local)"""
-    # Tentar Redis
     r = await get_redis()
     if r:
         try:
@@ -34,8 +32,7 @@ async def cache_get(key: str) -> Optional[dict]:
                 return json.loads(data)
         except Exception:
             pass
-    
-    # Fallback local
+
     cached = _local_cache.get(key)
     if cached:
         data, expires = cached
@@ -44,18 +41,18 @@ async def cache_get(key: str) -> Optional[dict]:
         del _local_cache[key]
     return None
 
+
 async def cache_set(key: str, data: dict, ttl_seconds: int = 300):
     """Salva no cache (Redis + Local)"""
-    # Redis
     r = await get_redis()
     if r:
         try:
             await r.setex(key, ttl_seconds, json.dumps(data))
         except Exception:
             pass
-    
-    # Local (fallback)
+
     _local_cache[key] = (data, datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds))
+
 
 async def cache_delete(key: str):
     """Remove do cache"""
@@ -67,6 +64,7 @@ async def cache_delete(key: str):
             pass
     _local_cache.pop(key, None)
 
+
 async def cache_delete_pattern(pattern: str):
     """Remove todas as chaves que batem com o padrão"""
     r = await get_redis()
@@ -77,8 +75,7 @@ async def cache_delete_pattern(pattern: str):
                 await r.delete(*keys)
         except Exception:
             pass
-    
-    # Local - remove matching
+
     to_delete = [k for k in _local_cache if pattern.replace("*", "") in k]
     for k in to_delete:
         _local_cache.pop(k, None)

@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Integer, Boolean, DateTime, String, Text, Enum as SQLEnum
+from sqlalchemy import BigInteger, Integer, DateTime, String, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
@@ -7,16 +7,19 @@ from typing import Optional
 import uuid
 import enum
 
+
 class TicketStatus(str, enum.Enum):
     OPEN = "open"
     CLAIMED = "claimed"
     CLOSED = "closed"
+
 
 class TicketPriority(str, enum.Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     URGENT = "urgent"
+
 
 class Ticket(Base):
     __tablename__ = "tickets"

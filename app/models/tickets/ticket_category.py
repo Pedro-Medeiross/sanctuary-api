@@ -6,6 +6,7 @@ from app.database import Base
 from typing import Optional
 import uuid
 
+
 class TicketCategory(Base):
     __tablename__ = "ticket_categories"
     

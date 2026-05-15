@@ -1,4 +1,3 @@
-# app/models/guild_stats.py
 from sqlalchemy import BigInteger, Integer, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime, timezone
@@ -6,7 +5,8 @@ from app.database import Base
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.models.guild import Guild
+    from app.models.discord.guild import Guild
+
 
 class GuildStats(Base):
     __tablename__ = "guild_stats"
@@ -26,4 +26,4 @@ class GuildStats(Base):
         onupdate=lambda: datetime.now(timezone.utc)
     )
     
-    guild: Mapped["Guild"] = relationship("Guild")
+    guild: Mapped["Guild"] = relationship("Guild", back_populates="stats")

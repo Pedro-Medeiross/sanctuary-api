@@ -1,6 +1,5 @@
-# app/models/session.py
 import uuid
-from sqlalchemy import BigInteger, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime, timezone
@@ -8,7 +7,8 @@ from app.database import Base
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.models.user import User
+    from app.models.core.user import User
+
 
 class Session(Base):
     __tablename__ = "sessions"

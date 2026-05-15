@@ -1,10 +1,10 @@
-from sqlalchemy import BigInteger, Integer, Boolean, DateTime, String, Text
+from sqlalchemy import BigInteger, Integer, Boolean, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 from app.database import Base
-from typing import Optional
 import uuid
+
 
 class TicketStaffRole(Base):
     __tablename__ = "ticket_staff_roles"

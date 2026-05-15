@@ -7,9 +7,8 @@ from app.database import Base
 from typing import List, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.models.user import User
+    from app.models.core.user import User
 
-# Tabela de associação many-to-many
 user_roles = Table(
     "user_roles",
     Base.metadata,
@@ -17,6 +16,7 @@ user_roles = Table(
     Column("role_id", UUID(as_uuid=True), ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
     Column("assigned_at", DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 )
+
 
 class Role(Base):
     __tablename__ = "roles"
@@ -28,15 +28,11 @@ class Role(Base):
     )
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     description: Mapped[str] = mapped_column(String(255), nullable=True)
-    permissions: Mapped[str] = mapped_column(String, default="[]")  # JSON array
-    color: Mapped[str] = mapped_column(String(7), default="#99AAB5")  # Hex color
-    
-    # Hierarquia
-    position: Mapped[int] = mapped_column(default=0)  # Maior = mais poder
+    permissions: Mapped[str] = mapped_column(String, default="[]")
+    color: Mapped[str] = mapped_column(String(7), default="#99AAB5")
+    position: Mapped[int] = mapped_column(default=0)
     is_default: Mapped[bool] = mapped_column(default=False)
-    is_system: Mapped[bool] = mapped_column(default=False)  # Roles do sistema não podem ser deletadas
-    
-    # Status
+    is_system: Mapped[bool] = mapped_column(default=False)
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), 

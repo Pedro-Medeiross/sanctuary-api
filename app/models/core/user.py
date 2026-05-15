@@ -1,4 +1,3 @@
-# app/models/user.py
 import uuid
 from sqlalchemy import String, Boolean, DateTime, Text, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID, BIGINT  # ← Adicionar BIGINT
@@ -9,9 +8,9 @@ from typing import List, Optional, TYPE_CHECKING
 import enum
 
 if TYPE_CHECKING:
-    from app.models.user_connection import UserConnection
-    from app.models.role import Role
-    from app.models.session import Session
+    from app.models.core.user_connection import UserConnection
+    from app.models.core.role import Role
+    from app.models.core.session import Session
 
 class User(Base):
     __tablename__ = "users"

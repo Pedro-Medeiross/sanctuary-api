@@ -3,7 +3,9 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import uuid
 
+
 # ============ PAINÉIS ============
+
 class TicketPanelCreate(BaseModel):
     title: str = Field(..., max_length=100)
     description: Optional[str] = None
@@ -11,7 +13,8 @@ class TicketPanelCreate(BaseModel):
     button_color: str = Field(default="green")
     channel_id: int
     category_id: Optional[int] = None
-    
+
+
 class TicketPanelUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
@@ -21,7 +24,8 @@ class TicketPanelUpdate(BaseModel):
     category_id: Optional[int] = None
     is_active: Optional[bool] = None
 
-class TicketPanelResponse(BaseModel):   
+
+class TicketPanelResponse(BaseModel):
     id: uuid.UUID
     guild_id: int
     channel_id: Optional[int] = None
@@ -36,11 +40,14 @@ class TicketPanelResponse(BaseModel):
     updated_at: datetime
     class Config: from_attributes = True
 
+
 # ============ STAFF ROLES ============
+
 class StaffRoleCreate(BaseModel):
     role_id: int
     role_name: str
     level: int = Field(..., ge=1, le=4)
+
 
 class StaffRoleUpdate(BaseModel):
     role_name: Optional[str] = None
@@ -53,6 +60,7 @@ class StaffRoleUpdate(BaseModel):
     can_view_all: Optional[bool] = None
     can_manage_panels: Optional[bool] = None
     can_manage_config: Optional[bool] = None
+
 
 class StaffRoleResponse(BaseModel):
     id: uuid.UUID
@@ -72,43 +80,33 @@ class StaffRoleResponse(BaseModel):
     created_at: datetime
     class Config: from_attributes = True
 
+
 # ============ TICKETS ============
-class TicketResponse(BaseModel):
-    id: uuid.UUID
-    guild_id: int
-    panel_id: Optional[uuid.UUID] = None
-    channel_id: int
-    user_id: int
-    claimed_by: Optional[int] = None
-    status: str
-    priority: str
-    closed_by: Optional[int] = None
-    close_reason: Optional[str] = None
-    members: List[int] = []
-    last_activity_at: datetime
-    created_at: datetime
-    updated_at: datetime
-    closed_at: Optional[datetime] = None
-    class Config: from_attributes = True
 
 class TicketPriorityUpdate(BaseModel):
     priority: str = Field(..., pattern="^(low|medium|high|urgent)$")
+
 
 class TicketTransferRequest(BaseModel):
     to_staff_id: int
     reason: Optional[str] = None
 
+
 class TicketMemberRequest(BaseModel):
     user_id: int
+
 
 class TicketCloseRequest(BaseModel):
     reason: Optional[str] = None
 
+
 # ============ BANS ============
+
 class TicketBanCreate(BaseModel):
     user_id: int
     reason: Optional[str] = None
-    expires_in_days: Optional[int] = None  # null = permanente
+    expires_in_days: Optional[int] = None
+
 
 class TicketBanResponse(BaseModel):
     id: uuid.UUID
@@ -121,34 +119,24 @@ class TicketBanResponse(BaseModel):
     created_at: datetime
     class Config: from_attributes = True
 
+
 # ============ FEEDBACK ============
+
 class TicketFeedbackCreate(BaseModel):
     staff_id: int
     rating: int = Field(..., ge=1, le=5)
     comment: Optional[str] = None
 
-class TicketFeedbackResponse(BaseModel):
-    id: uuid.UUID
-    ticket_id: uuid.UUID
-    user_id: int
-    staff_id: int
-    rating: int
-    comment: Optional[str] = None
-    created_at: datetime
-    class Config: from_attributes = True
-
-class FeedbackStatsResponse(BaseModel):
-    average_rating: float
-    total_feedbacks: int
-    by_staff: Dict[str, Dict[str, Any]]
 
 # ============ CONFIG ============
+
 class TicketConfigUpdate(BaseModel):
     max_open_tickets: Optional[int] = None
     auto_close_hours: Optional[int] = None
     allow_user_close: Optional[bool] = None
     allow_attachments: Optional[bool] = None
     transcript_channel: Optional[int] = None
+
 
 class TicketConfigResponse(BaseModel):
     guild_id: int
@@ -161,13 +149,17 @@ class TicketConfigResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     class Config: from_attributes = True
-    
+
+
+# ============ CATEGORIAS ============
+
 class TicketCategoryCreate(BaseModel):
     name: str = Field(..., max_length=100)
     label: str = Field(..., max_length=100)
     emoji: Optional[str] = None
     priority: str = Field(default="medium", pattern="^(low|medium|high|urgent)$")
     position: int = Field(default=0)
+
 
 class TicketCategoryUpdate(BaseModel):
     name: Optional[str] = None
@@ -176,6 +168,7 @@ class TicketCategoryUpdate(BaseModel):
     priority: Optional[str] = None
     position: Optional[int] = None
     is_active: Optional[bool] = None
+
 
 class TicketCategoryResponse(BaseModel):
     id: uuid.UUID

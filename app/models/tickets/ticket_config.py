@@ -1,8 +1,9 @@
-from sqlalchemy import BigInteger, Integer, Boolean, DateTime, Text
+from sqlalchemy import BigInteger, Integer, Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 from app.database import Base
 from typing import Optional
+
 
 class TicketConfig(Base):
     __tablename__ = "ticket_configs"

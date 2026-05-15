@@ -1,70 +1,49 @@
-# app/routes/uploads.py
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pathlib import Path
-import os
-from app.utils.uploads import AVATARS_DIR, BANNERS_DIR, UPLOAD_DIR
 
-TRANSCRIPTS_DIR = Path("uploads/transcripts")
+from app.utils.uploads import AVATARS_DIR, BANNERS_DIR, TRANSCRIPTS_DIR
 
 router = APIRouter(prefix="/uploads", tags=["Uploads"])
+
+MEDIA_TYPES = {
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'webp': 'image/webp',
+    'gif': 'image/gif',
+    'txt': 'text/plain',
+    'html': 'text/html',
+    'json': 'application/json',
+    'md': 'text/markdown',
+}
+
+
+def _serve_file(filepath: Path, directory: Path, default_media_type: str = "application/octet-stream") -> FileResponse:
+    """Serve arquivo estático com segurança path traversal"""
+    if not filepath.resolve().is_relative_to(directory.resolve()):
+        raise HTTPException(403, "Acesso negado")
+
+    if not filepath.exists():
+        raise HTTPException(404, "Arquivo não encontrado")
+
+    ext = filepath.suffix.lstrip('.').lower()
+    return FileResponse(filepath, media_type=MEDIA_TYPES.get(ext, default_media_type))
+
 
 @router.get("/avatars/{filename}")
 async def serve_avatar(filename: str):
     """Serve imagens de avatar"""
-    filepath = AVATARS_DIR / filename
-    
-    # Segurança: evitar path traversal
-    if not filepath.resolve().is_relative_to(AVATARS_DIR.resolve()):
-        raise HTTPException(403, "Acesso negado")
-    
-    if not filepath.exists():
-        raise HTTPException(404, "Avatar não encontrado")
-    
-    return FileResponse(
-        filepath,
-        media_type="image/webp" if filename.endswith(".webp") else "image/jpeg"
-    )
+    return _serve_file(AVATARS_DIR / filename, AVATARS_DIR, "image/webp")
+
 
 @router.get("/banners/{filename}")
 async def serve_banner(filename: str):
     """Serve imagens de banner"""
-    filepath = BANNERS_DIR / filename
-    
-    if not filepath.resolve().is_relative_to(BANNERS_DIR.resolve()):
-        raise HTTPException(403, "Acesso negado")
-    
-    if not filepath.exists():
-        raise HTTPException(404, "Banner não encontrado")
-    
-    return FileResponse(
-        filepath,
-        media_type="image/webp" if filename.endswith(".webp") else "image/jpeg"
-    )
-    
-    
+    return _serve_file(BANNERS_DIR / filename, BANNERS_DIR, "image/webp")
+
+
 @router.get("/transcripts/{filename}")
 async def serve_transcript(filename: str):
     """Serve arquivos de transcrição"""
-    filepath = TRANSCRIPTS_DIR / filename
-    
-    if not filepath.resolve().is_relative_to(TRANSCRIPTS_DIR.resolve()):
-        raise HTTPException(403, "Acesso negado")
-    
-    if not filepath.exists():
-        raise HTTPException(404, "Transcrição não encontrada")
-    
-    # Determinar media type pela extensão
-    ext = filename.split('.')[-1].lower()
-    media_types = {
-        'png': 'image/png',
-        'jpg': 'image/jpeg',
-        'jpeg': 'image/jpeg',
-        'webp': 'image/webp',
-        'txt': 'text/plain',
-        'html': 'text/html',
-        'json': 'application/json',
-        'md': 'text/markdown',
-    }
-    
-    return FileResponse(filepath, media_type=media_types.get(ext, 'application/octet-stream'))
+    return _serve_file(TRANSCRIPTS_DIR / filename, TRANSCRIPTS_DIR, "text/plain")

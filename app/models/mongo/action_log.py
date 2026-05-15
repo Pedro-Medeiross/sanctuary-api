@@ -1,27 +1,20 @@
-# app/models/action_log.py
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
+from dataclasses import dataclass, field
 
+
+@dataclass
 class ActionLog:
     """Modelo para logs de ação (MongoDB)"""
+    guild_id: int
+    log_type: str
+    user_id: Optional[int] = None
+    target_id: Optional[int] = None
+    channel_id: Optional[int] = None
+    data: Dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
-    def __init__(
-        self,
-        guild_id: int,
-        log_type: str,
-        user_id: Optional[int] = None,
-        target_id: Optional[int] = None,
-        channel_id: Optional[int] = None,
-        data: Optional[Dict[str, Any]] = None,
-        created_at: Optional[datetime] = None
-    ):
-        self.guild_id = guild_id
-        self.log_type = log_type
-        self.user_id = user_id
-        self.target_id = target_id
-        self.channel_id = channel_id
-        self.data = data or {}
-        self.created_at = created_at or datetime.now(timezone.utc)  # ← UTC
+    _id: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -34,14 +27,13 @@ class ActionLog:
             "created_at": self.created_at
         }
     
-    @staticmethod
-    def from_dict(doc: Dict[str, Any]) -> "ActionLog":
+    @classmethod
+    def from_dict(cls, doc: Dict[str, Any]) -> "ActionLog":
         created_at = doc.get("created_at")
-        # Garantir timezone se vier sem
         if created_at and created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=timezone.utc)
         
-        return ActionLog(
+        log = cls(
             guild_id=doc.get("guild_id"),
             log_type=doc.get("log_type"),
             user_id=doc.get("user_id"),
@@ -50,10 +42,12 @@ class ActionLog:
             data=doc.get("data", {}),
             created_at=created_at
         )
+        log._id = str(doc.get("_id", ""))
+        return log
     
     def to_response(self) -> Dict[str, Any]:
         return {
-            "id": str(self.id) if hasattr(self, 'id') else None,
+            "id": self._id or None,
             "guild_id": str(self.guild_id),
             "log_type": self.log_type,
             "user_id": str(self.user_id) if self.user_id else None,

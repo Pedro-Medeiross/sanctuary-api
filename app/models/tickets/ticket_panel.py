@@ -1,10 +1,11 @@
-from sqlalchemy import BigInteger, Integer, Boolean, DateTime, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 from app.database import Base
 from typing import Optional, Dict, Any
 import uuid
+
 
 class TicketPanel(Base):
     __tablename__ = "ticket_panels"
