@@ -1,5 +1,4 @@
 # app/routes/tickets.py
-from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, WebSocket, WebSocketDisconnect, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
