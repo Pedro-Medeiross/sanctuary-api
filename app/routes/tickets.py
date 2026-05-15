@@ -1206,7 +1206,7 @@ async def transfer_ticket_bot(
 
 # ============ CATEGORIAS (DASHBOARD) ============
 
-@router.get("/{guild_id}/tickets/categories", response_model=List[TicketCategoryResponse])
+@router.get("/{guild_id}/tickets/categories")
 async def get_categories(
     guild_id: int,
     current_user: User = Depends(get_current_user),
@@ -1220,22 +1220,19 @@ async def get_categories(
     )
     categories = result.scalars().all()
     
-    if not categories:
-        return []
-    
     return [
-        TicketCategoryResponse(
-            id=c.id,
-            guild_id=c.guild_id,
-            name=c.name,
-            label=c.label,
-            emoji=c.emoji,
-            priority=c.priority,
-            position=c.position,
-            is_active=c.is_active,
-            created_at=c.created_at,
-            updated_at=c.updated_at,
-        ) for c in categories
+        {
+            "id": str(c.id),
+            "guild_id": c.guild_id,
+            "name": c.name,
+            "label": c.label,
+            "emoji": c.emoji,
+            "priority": c.priority,
+            "position": c.position,
+            "is_active": c.is_active,
+            "created_at": c.created_at.isoformat(),
+            "updated_at": c.updated_at.isoformat(),
+        } for c in categories
     ]
 
 @router.post("/{guild_id}/tickets/categories", response_model=TicketCategoryResponse)
@@ -1313,7 +1310,7 @@ async def delete_category(
 
 # ============ CATEGORIAS (BOT) ============
 
-@router.get("/{guild_id}/tickets/bot/categories", response_model=List[TicketCategoryResponse])
+@router.get("/{guild_id}/tickets/bot/categories")
 async def get_categories_bot(
     guild_id: int,
     bot_user: str = Depends(verify_bot_auth),
@@ -1330,23 +1327,19 @@ async def get_categories_bot(
     )
     categories = result.scalars().all()
     
-    # Se não tem categorias, retorna lista vazia
-    if not categories:
-        return []
-    
     return [
-        TicketCategoryResponse(
-            id=c.id,
-            guild_id=c.guild_id,
-            name=c.name,
-            label=c.label,
-            emoji=c.emoji,
-            priority=c.priority,
-            position=c.position,
-            is_active=c.is_active,
-            created_at=c.created_at,
-            updated_at=c.updated_at,
-        ) for c in categories
+        {
+            "id": str(c.id),
+            "guild_id": c.guild_id,
+            "name": c.name,
+            "label": c.label,
+            "emoji": c.emoji,
+            "priority": c.priority,
+            "position": c.position,
+            "is_active": c.is_active,
+            "created_at": c.created_at.isoformat(),
+            "updated_at": c.updated_at.isoformat(),
+        } for c in categories
     ]
 
 # ============ WEBSOCKET ============
