@@ -115,7 +115,7 @@ async def update_ticket_config(
 
 # ============ STAFF ROLES ============
 
-@router.get("/{guild_id}/tickets/staff-roles", response_model=List[StaffRoleResponse])
+@router.get("/{guild_id}/tickets/staff-roles")
 async def get_staff_roles(
     guild_id: int,
     current_user: User = Depends(get_current_user),
