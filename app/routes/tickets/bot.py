@@ -84,6 +84,36 @@ async def get_categories_bot(
 
 # ============ PAINÉIS ============
 
+@router.get("/{guild_id}/tickets/bot/panels")
+async def get_panels_bot(
+    guild_id: int,
+    bot_user: str = Depends(verify_bot_auth),
+    db: AsyncSession = Depends(get_db)
+):
+    """[Bot] Lista painéis ativos com categorias"""
+    result = await db.execute(
+        select(TicketPanel).where(
+            TicketPanel.guild_id == guild_id,
+            TicketPanel.is_active == True
+        )
+    )
+    panels = result.scalars().all()
+    
+    return [
+        {
+            "id": str(p.id),
+            "title": p.title,
+            "description": p.description,
+            "button_label": p.button_label,
+            "button_color": p.button_color,
+            "channel_id": str(p.channel_id) if p.channel_id else None,
+            "category_id": str(p.category_id) if p.category_id else None,
+            "message_id": str(p.message_id) if p.message_id else None,
+            "is_active": p.is_active,
+        }
+        for p in panels
+    ]
+
 @router.get("/{guild_id}/tickets/panels/{panel_id}", response_model=TicketPanelResponse)
 async def get_panel_bot(
     guild_id: int,
