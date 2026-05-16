@@ -128,6 +128,12 @@ class TicketFeedbackCreate(BaseModel):
     comment: Optional[str] = None
 
 
+class FeedbackStatsResponse(BaseModel):
+    average_rating: float
+    total_feedbacks: int
+    by_staff: Dict[str, Dict[str, Any]]
+
+
 # ============ CONFIG ============
 
 class TicketConfigUpdate(BaseModel):
